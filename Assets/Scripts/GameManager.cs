@@ -21,14 +21,20 @@ public class GameManager : MonoBehaviour
     [Header("Managers")]
     public JokerManager jokerManager; // 조커 매니저 참조
 
-    [Header("Config")]
-    [Tooltip("초기 손패 장수")] [SerializeField] private int handSize = 6;
+    [Header("Turns")]
     [Tooltip("이번 라운드에 진행할 턴 수")] [SerializeField] private int turnsToPlay = 5;
 
-    [Header("Guaranteed Cards (랜덤 지급 전 고정 추가 수량)")]
-    [Tooltip("랜덤 지급 전에 Rock을 이 개수만큼 강제로 추가")] [SerializeField] private int guaranteedRocks = 1;
-    [Tooltip("랜덤 지급 전에 Paper를 이 개수만큼 강제로 추가")] [SerializeField] private int guaranteedPapers = 1;
-    [Tooltip("랜덤 지급 전에 Scissors를 이 개수만큼 강제로 추가")] [SerializeField] private int guaranteedScissors = 1;
+    [Header("AI Hand Config")]
+    [Tooltip("AI 초기 손패 장수")] [SerializeField] private int aiHandSize = 6;
+    [Tooltip("랜덤 지급 전에 AI에게 Rock을 이 개수만큼 강제로 추가")] [SerializeField] private int aiGuaranteedRocks = 1;
+    [Tooltip("랜덤 지급 전에 AI에게 Paper를 이 개수만큼 강제로 추가")] [SerializeField] private int aiGuaranteedPapers = 1;
+    [Tooltip("랜덤 지급 전에 AI에게 Scissors를 이 개수만큼 강제로 추가")] [SerializeField] private int aiGuaranteedScissors = 1;
+
+    [Header("Player Hand Config")]
+    [Tooltip("플레이어 초기 손패 장수")] [SerializeField] private int playerHandSize = 6;
+    [Tooltip("랜덤 지급 전에 플레이어에게 Rock을 이 개수만큼 강제로 추가")] [SerializeField] private int playerGuaranteedRocks = 1;
+    [Tooltip("랜덤 지급 전에 플레이어에게 Paper를 이 개수만큼 강제로 추가")] [SerializeField] private int playerGuaranteedPapers = 1;
+    [Tooltip("랜덤 지급 전에 플레이어에게 Scissors를 이 개수만큼 강제로 추가")] [SerializeField] private int playerGuaranteedScissors = 1;
 
     [Header("Result Colors")]
     [SerializeField] private Color winColor = Color.green;
@@ -52,34 +58,48 @@ public class GameManager : MonoBehaviour
     private int lossCount = 0;
     private int playerRerollsLeft = 0;
 
-    private int MaxTurns => Mathf.Clamp(turnsToPlay, 1, Mathf.Max(1, handSize));
+    // 턴 수는 손패 크기와 별개로 설정 가능 (단, 실제 플레이는 카드 소진 시 조기 종료될 수 있음)
+    private int MaxTurns => Mathf.Max(1, turnsToPlay);
 
     private void OnValidate()
     {
-        if (handSize < 1) handSize = 1;
+        // 기본 유효성
         if (turnsToPlay < 1) turnsToPlay = 1;
-        if (turnsToPlay > handSize) turnsToPlay = handSize; // 손패보다 많은 턴 금지
-        if (guaranteedRocks < 0) guaranteedRocks = 0;
-        if (guaranteedPapers < 0) guaranteedPapers = 0;
-        if (guaranteedScissors < 0) guaranteedScissors = 0;
-        int sum = guaranteedRocks + guaranteedPapers + guaranteedScissors;
-        if (sum > handSize)
+
+        if (aiHandSize < 1) aiHandSize = 1;
+        if (playerHandSize < 1) playerHandSize = 1;
+
+        if (aiGuaranteedRocks < 0) aiGuaranteedRocks = 0;
+        if (aiGuaranteedPapers < 0) aiGuaranteedPapers = 0;
+        if (aiGuaranteedScissors < 0) aiGuaranteedScissors = 0;
+
+        if (playerGuaranteedRocks < 0) playerGuaranteedRocks = 0;
+        if (playerGuaranteedPapers < 0) playerGuaranteedPapers = 0;
+        if (playerGuaranteedScissors < 0) playerGuaranteedScissors = 0;
+
+        // 보장 수량 합계가 손패 크기를 넘지 않도록 조정
+        void ReduceOverflow(ref int r, ref int p, ref int s, int size)
         {
-            // 초과분을 Scissors -> Paper -> Rock 순으로 줄임
-            int overflow = sum - handSize;
-            int reduceS = Mathf.Min(guaranteedScissors, overflow);
-            guaranteedScissors -= reduceS; overflow -= reduceS;
+            int sum = r + p + s;
+            if (sum <= size) return;
+
+            int overflow = sum - size;
+            int reduceS = Mathf.Min(s, overflow);
+            s -= reduceS; overflow -= reduceS;
             if (overflow > 0)
             {
-                int reduceP = Mathf.Min(guaranteedPapers, overflow);
-                guaranteedPapers -= reduceP; overflow -= reduceP;
+                int reduceP = Mathf.Min(p, overflow);
+                p -= reduceP; overflow -= reduceP;
             }
             if (overflow > 0)
             {
-                int reduceR = Mathf.Min(guaranteedRocks, overflow);
-                guaranteedRocks -= reduceR; overflow -= reduceR;
+                int reduceR = Mathf.Min(r, overflow);
+                r -= reduceR; overflow -= reduceR;
             }
         }
+
+        ReduceOverflow(ref aiGuaranteedRocks, ref aiGuaranteedPapers, ref aiGuaranteedScissors, aiHandSize);
+        ReduceOverflow(ref playerGuaranteedRocks, ref playerGuaranteedPapers, ref playerGuaranteedScissors, playerHandSize);
     }
 
     private void Start()
@@ -99,14 +119,13 @@ public class GameManager : MonoBehaviour
 
         // 유효성 보정(런타임) - 에디터 외 상황 대비
         if (turnsToPlay < 1) turnsToPlay = 1;
-        if (turnsToPlay > handSize) turnsToPlay = handSize;
 
-        GenerateHand(aiHand, handSize, guaranteedRocks, guaranteedPapers, guaranteedScissors);
-        GenerateHand(playerHand, handSize, guaranteedRocks, guaranteedPapers, guaranteedScissors);
+        GenerateHand(aiHand, aiHandSize, aiGuaranteedRocks, aiGuaranteedPapers, aiGuaranteedScissors);
+        GenerateHand(playerHand, playerHandSize, playerGuaranteedRocks, playerGuaranteedPapers, playerGuaranteedScissors);
 
         var a = CountHand(aiHand);
         var p = CountHand(playerHand);
-        Debug.Log($"[StartRound] HandSize={handSize}, Turns={MaxTurns} | AI Hand: R{a.rock} P{a.paper} S{a.scissors}; Player Hand: R{p.rock} P{p.paper} S{p.scissors}; Rerolls={playerRerollsLeft}");
+        Debug.Log($"[StartRound] AI HandSize={aiHandSize}, Player HandSize={playerHandSize}, Turns={MaxTurns} | AI Hand: R{a.rock} P{a.paper} S{a.scissors}; Player Hand: R{p.rock} P{p.paper} S{p.scissors}; Rerolls={playerRerollsLeft}");
 
         roundActive = true;
         inputLocked = false;
@@ -131,8 +150,8 @@ public class GameManager : MonoBehaviour
     // 권장사항: 외부 시스템에서 턴 수를 변경하고, 필요 시 조커 안내를 재출력
     public void SetTurnsToPlay(int newTurns, bool refreshJokerInfo = true)
     {
-        turnsToPlay = Mathf.Clamp(newTurns, 1, handSize);
-        Debug.Log($"[Config] TurnsToPlay set to {turnsToPlay} (handSize={handSize})");
+        turnsToPlay = Mathf.Max(1, newTurns);
+        Debug.Log($"[Config] TurnsToPlay set to {turnsToPlay} (aiHandSize={aiHandSize}, playerHandSize={playerHandSize})");
         UpdateUI();
         if (refreshJokerInfo && jokerManager != null)
         {
@@ -155,7 +174,7 @@ public class GameManager : MonoBehaviour
             Debug.Log("[Reroll] 라운드 비활성");
             return;
         }
-        if (currentTurn > 1 || playerHand.Count != handSize)
+        if (currentTurn > 1 || playerHand.Count != playerHandSize)
         {
             Debug.Log("[Reroll] 이미 턴 진행 - 첫 턴 전에만 가능");
             if (resultText != null) { resultText.text = "Result: Reroll unavailable (turn started)"; resultText.color = Color.white; }
@@ -168,7 +187,7 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        GenerateHand(playerHand, handSize, guaranteedRocks, guaranteedPapers, guaranteedScissors);
+        GenerateHand(playerHand, playerHandSize, playerGuaranteedRocks, playerGuaranteedPapers, playerGuaranteedScissors);
         playerRerollsLeft--;
         var p = CountHand(playerHand);
         Debug.Log($"[Reroll] Player Hand New: R{p.rock} P{p.paper} S{p.scissors} | Remaining Rerolls={playerRerollsLeft}");
@@ -187,6 +206,21 @@ public class GameManager : MonoBehaviour
         if (currentTurn > MaxTurns) { Debug.Log("[PlayerMakesChoice] 모든 턴 소진"); return; }
         if (choiceIndex < 0 || choiceIndex > 2) { Debug.LogWarning("잘못된 choiceIndex"); return; }
 
+        // AI 카드가 모두 소진되었으면 조기 종료
+        if (aiHand.Count == 0)
+        {
+            roundActive = false;
+            Debug.Log("[PlayerMakesChoice] AI has no cards left - ending round early");
+            if (resultText != null)
+            {
+                resultText.text = "Result: AI has no cards left. Round finished.";
+                resultText.color = Color.white;
+            }
+            if (restartButton != null) restartButton.SetActive(true);
+            UpdateUI();
+            return;
+        }
+
         Choice desired = (Choice)choiceIndex;
         int playerCardIndex = playerHand.FindIndex(c => c == desired);
         if (playerCardIndex == -1)
@@ -203,13 +237,6 @@ public class GameManager : MonoBehaviour
         inputLocked = true;
         Choice playerChoice = desired;
         playerHand.RemoveAt(playerCardIndex);
-
-        if (aiHand.Count == 0)
-        {
-            Debug.LogWarning("AI 핸드 비어 있음 - 논리 오류");
-            inputLocked = false;
-            return;
-        }
 
         Choice aiChoice;
         if (jokerManager != null && jokerManager.AIDrawFromFront)
@@ -252,11 +279,12 @@ public class GameManager : MonoBehaviour
 
         currentTurn++;
 
-        if (currentTurn > MaxTurns)
+        if (currentTurn > MaxTurns || aiHand.Count == 0)
         {
             roundActive = false;
             if (resultText != null)
                 resultText.text += "\n(Round finished - Step3에서 최종 처리)";
+            if (restartButton != null) restartButton.SetActive(true);
             Debug.Log("[Round] 턴 종료 - EndRound 예정");
         }
         else

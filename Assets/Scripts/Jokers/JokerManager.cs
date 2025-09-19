@@ -8,6 +8,10 @@ namespace Jokers
         private readonly Dictionary<JokerType, IJoker> _active = new Dictionary<JokerType, IJoker>();
         private readonly List<JokerType> _order = new List<JokerType>();
 
+        // Tag/Data-driven (ScriptableObject) pipeline - Step 2 skeleton
+        [SerializeField] private List<JokerData> _activeAssets = new List<JokerData>();
+        private readonly List<JokerData> _assetOrder = new List<JokerData>();
+
         public bool AIDrawFromFront { get { return _active.ContainsKey(JokerType.Scout); } }
 
         public string CurrentJokerName
@@ -108,6 +112,12 @@ namespace Jokers
                     j.OnRoundStart(gm);
                 }
             }
+
+            // Tag/data-driven: placeholder log (Step 2)
+            if (_assetOrder.Count > 0)
+            {
+                Debug.Log($"[JokerManager][Tags] OnRoundStart with {_assetOrder.Count} asset jokers (no-op)");
+            }
         }
 
         public void OnJokerToggled(GameManager gm)
@@ -119,6 +129,12 @@ namespace Jokers
                 {
                     j.OnRoundStart(gm);
                 }
+            }
+
+            // Tag/data-driven: placeholder log (Step 2)
+            if (_assetOrder.Count > 0)
+            {
+                Debug.Log($"[JokerManager][Tags] OnJokerToggled with {_assetOrder.Count} asset jokers (no-op)");
             }
         }
 
@@ -133,7 +149,58 @@ namespace Jokers
                     score = j.ApplyScoreModification(score, ref currentTotalScore, playerChoice, outcome);
                 }
             }
+
+            // Tag/data-driven: will be applied in Step 4/7
+            if (_assetOrder.Count > 0)
+            {
+                Debug.Log("[JokerManager][Tags] ModifyScore adapter (no-op at Step 2)");
+            }
+
             return score;
+        }
+
+        // -------- Tag/Data-driven API (Step 2 skeleton) --------
+        public void SetByAsset(JokerData data)
+        {
+            _activeAssets.Clear();
+            _assetOrder.Clear();
+            if (data != null)
+            {
+                _activeAssets.Add(data);
+                _assetOrder.Add(data);
+            }
+            Debug.Log($"[JokerManager][Tags] SetByAsset: {(data != null ? data.jokerName : "None")}");
+        }
+
+        public void ToggleByAsset(JokerData data)
+        {
+            if (data == null)
+            {
+                _activeAssets.Clear();
+                _assetOrder.Clear();
+                Debug.Log("[JokerManager][Tags] Cleared all asset jokers");
+                return;
+            }
+
+            if (_activeAssets.Contains(data))
+            {
+                _activeAssets.Remove(data);
+                _assetOrder.Remove(data);
+                Debug.Log($"[JokerManager][Tags] Disabled: {data.jokerName}");
+            }
+            else
+            {
+                _activeAssets.Add(data);
+                _assetOrder.Add(data);
+                Debug.Log($"[JokerManager][Tags] Enabled: {data.jokerName}");
+            }
+        }
+
+        public void ExecuteTurnSettlementEffects(GameContext context)
+        {
+            if (context == null) return;
+            if (_assetOrder.Count == 0) return; // no asset jokers
+            Debug.Log($"[JokerManager][Tags] ExecuteTurnSettlementEffects with {_assetOrder.Count} asset jokers (no-op)");
         }
     }
 }

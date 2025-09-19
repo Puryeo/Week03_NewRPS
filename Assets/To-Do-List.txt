@@ -1,0 +1,196 @@
+New_Rock_Paper_Scissors ? Tag-based Joker System To-Do List (Step-by-Step)
+
+Purpose
+- Implement a data-driven, tag-based Joker system per PRD section L, with small, testable steps.
+- Keep turnsToPlay independent from hand sizes; end round early if a side runs out of cards.
+- Include Unity editor instructions so non-engineers can follow along.
+
+Ground Rules
+- Do not implement all features at once. Complete each step, then test in Play Mode.
+- Keep GameManager working at every step (no breaking changes).
+- Commit after each green Play test.
+
+Codebase Audit (Scripts folder)
+- Assets/Scripts/GameManager.cs
+  - Status: Live. Hands split AI/Player; turnsToPlay independent; early end on AI depletion. Needs tag pipeline wiring (GameContext + ExecuteTurnSettlementEffects) in Step 7.
+- Assets/Scripts/DEBUGHUD.cs
+  - Status: Uses enum-based toggles (JokerType) and string display. Must be refactored to use ScriptableObject JokerData references and JokerManager.ToggleByAsset/SetByAsset in Step 6.
+- Assets/Scripts/Jokers/JokerManager.cs
+  - Status: Enum+factory pattern using IJoker classes; ModifyScore transforms score; AIDrawFromFront derived from Scout enum. NOT aligned with PRD L (tag-based, data-driven).
+  - Action: Refactor in-place to manage List<JokerData> (assets), add ExecuteTurnSettlementEffects(GameContext), evaluate tags at timings; keep a temporary adapter for ModifyScore during migration (Step 2, 4, 7).
+- Assets/Scripts/Jokers/IJoker.cs
+  - Status: Legacy interface; conflicts with tag-based data model.
+  - Action: Mark as Legacy; remove after Step 7 stabilizes (Step 11 cleanup).
+- Assets/Scripts/Jokers/JokerTypes.cs
+  - Status: Enum driving old manager and HUD.
+  - Action: Mark as Legacy; replace by JokerData assets; remove in Step 11.
+- Assets/Scripts/Jokers/AllInRockJoker.cs, ContrarianJoker.cs, ScoutJoker.cs
+  - Status: Hardcoded per-joker classes.
+  - Action: Replace with JokerData assets (Step 5). Remove in Step 11.
+
+Folder Plan (create as needed)
+- Assets/Scripts/Jokers/Data
+- Assets/Scripts/Jokers/Runtime
+- Assets/JokerAssets (ScriptableObjects live here)
+- Assets/Scripts/Jokers/Legacy (temporary parking for old IJoker-based code)
+
+Step 0. Scene and basic setup
+- Task
+  - Save your scene.
+- Verify
+  - Project runs and buttons work (Rock/Paper/Scissors).
+- User actions
+  - File -> Save (e.g., Scenes/Main.unity)
+  - If TextMeshPro resources popup appears: Import/OK
+
+Step 1. Data model skeleton (no logic yet)
+- Task
+  - Create ScriptableObject and tag classes (skeleton only):
+    - Assets/Scripts/Jokers/Data/JokerData.cs
+    - Assets/Scripts/Jokers/Data/JokerTag.cs
+    - Assets/Scripts/Jokers/Data/JokerEnums.cs (Category, Type, ChoiceTarget, OutcomeTarget)
+    - Assets/Scripts/Jokers/Runtime/GameContext.cs (playerChoice, outcome, baseScore, currentTotal, scoreDelta)
+  - JokerData: [CreateAssetMenu] so assets can be created in editor.
+- Verify
+  - Compile succeeds.
+  - Project view can create a Joker Data asset and shows fields in Inspector.
+- User actions
+  - Project (left) -> Right-click -> Create -> Folder -> Scripts
+  - Scripts -> Right-click -> Create -> Folder -> Jokers -> Create two folders: Data, Runtime
+  - Scripts/Jokers/Data -> Right-click -> Create -> C# Script (name as above)
+  - Scripts/Jokers/Runtime -> Right-click -> Create -> C# Script (GameContext)
+  - Assets -> Right-click -> Create -> Folder -> JokerAssets
+  - Test asset creation: Assets/JokerAssets -> Right-click -> Create -> [Your Menu] -> Joker Data (just create, leave empty)
+
+Step 2. Refactor JokerManager to tag-based skeleton
+- Task
+  - Modify Assets/Scripts/Jokers/JokerManager.cs (keep the class name to preserve scene reference):
+    - Replace enum/IJoker storage with List<JokerData> activeJokers and List<JokerData> order.
+    - Add methods: OnRoundStart(GameManager), OnJokerToggled(GameManager), ExecuteTurnSettlementEffects(GameContext) ? initially log-only.
+    - Add ToggleByAsset(JokerData data), SetByAsset(JokerData data) with last toggled = highest priority.
+    - Keep temporary adapter ModifyScore(...) that calls tag execution later; for now, return baseScore unchanged.
+    - AIDrawFromFront property: false by default; later derive from tags in Step 8.
+  - Do NOT delete old code yet; comment/guard legacy code to avoid usage.
+- Verify
+  - Compile succeeds. Game runs without change in behavior.
+- User actions
+  - None (scene reference remains since class name is unchanged).
+
+Step 3. Minimal integration sanity check
+- Task
+  - Ensure GameManager.StartRound() calls jokerManager.OnRoundStart(this).
+  - Keep existing ModifyScore usage; tag pipeline wiring will come later.
+- Verify
+  - Play Mode works; Console shows JokerManager logs on round start.
+- User actions
+  - Press Play; click Rock/Paper/Scissors; watch Console for logs.
+
+Step 4. Tag schema v1 (small subset) + timing pipeline
+- Task
+  - In JokerEnums define:
+    - Category: Timing, Condition, Effect
+    - Timing types: RoundStart, TurnSettlement
+    - Condition types: OutcomeIs, PlayerChoiceIs
+    - Effect types: AddScoreDelta, ForceAIDrawFromFront, ShowInfo
+  - Implement in JokerManager:
+    - ExecuteTurnSettlementEffects(GameContext): for each active JokerData with Timing=TurnSettlement, check conditions, run effects; accumulate deltas into context.scoreDelta (start with baseScore).
+    - OnRoundStart(GameManager): for Timing=RoundStart, evaluate effects.
+  - Warn on unknown/malformed tags; never throw in play.
+- Verify
+  - Compile succeeds; no behavior changes without any active joker.
+- User actions
+  - None.
+
+Step 5. Create sample JokerData assets (expressed via tags)
+- Task
+  - All-In: Rock
+    - Conditions: PlayerChoiceIs=Rock
+    - Effects: AddScoreDelta(+15 on Win), AddScoreDelta(-9999 on Draw), AddScoreDelta(-9999 on Loss)
+  - The Contrarian
+    - Effects: AddScoreDelta(-5 on Win), AddScoreDelta(-1 on Draw), AddScoreDelta(+8 on Loss)
+  - Scout
+    - Timing: RoundStart -> Effects: ShowInfo("Front/Back" info), ForceAIDrawFromFront(true)
+- Verify
+  - Assets exist and Inspector shows tags; values editable.
+- User actions
+  - Assets/JokerAssets -> Right-click -> Create -> Joker Data
+  - Create three assets: AllInRock.asset, Contrarian.asset, Scout.asset
+  - Select each -> In Inspector add tags (use + buttons) and fill values.
+
+Step 6. Refactor DEBUGHUD to asset-based toggles
+- Task
+  - Update Assets/Scripts/DEBUGHUD.cs:
+    - Replace enum-based methods with public methods that accept JokerData references (serialized fields) and call JokerManager.ToggleByAsset/SetByAsset.
+    - Expose Text fields to show Current and Pipeline from JokerManager (string properties reading from assets/jokerName).
+  - Keep existing UI intact; update OnClick wiring.
+- Verify
+  - Toggling buttons changes activeJokers order; UI reflects current and pipeline.
+- User actions
+  - Hierarchy -> Right-click -> UI -> Canvas (if not present)
+  - Canvas -> Right-click -> UI -> Button (TextMeshPro). Create 3 buttons: AllInRock, Contrarian, Scout
+  - Select Canvas -> Add/Update HUD script on Canvas
+  - For each Button -> On Click() -> + -> drag Canvas (HUD) -> select method (e.g., ToggleAllInRockAsset())
+  - Assign corresponding JokerData assets into HUD serialized fields in Inspector
+  - Canvas -> Right-click -> UI -> Text - TextMeshPro -> add two labels: Current, Pipeline -> assign to HUD script fields
+
+Step 7. Switch score pipeline in GameManager to tags
+- Task
+  - In GameManager.PlayerMakesChoice:
+    - Compute baseScore
+    - Build GameContext { playerChoice, outcome, baseScore, currentTotal, scoreDelta = baseScore }
+    - Call jokerManager.ExecuteTurnSettlementEffects(context)
+    - currentScore += context.scoreDelta
+  - Modify JokerManager.ModifyScore to internally create GameContext and call ExecuteTurnSettlementEffects for backward compatibility (then mark ModifyScore obsolete).
+- Verify
+  - With no jokers: scores equal baseline (Win+5/Draw+3/Loss+0)
+  - With sample jokers: deltas match PRD (e.g., All-In: Rock Win => +20 total for the turn)
+- User actions
+  - Play -> Toggle a joker -> Play several hands; compare Score UI with expectations.
+
+Step 8. Scout info and draw policy via tags
+- Task
+  - In OnRoundStart: if ForceAIDrawFromFront is active, set JokerManager.AIDrawFromFront=true for this round.
+  - ShowInfo effect: call GameManager.ShowInfo with PeekAIFront/PeekAIBack values.
+- Verify
+  - Scout toggled: first and last-play cards shown; AI consumes from front.
+- User actions
+  - Play -> Toggle Scout -> Observe resultText and deterministic AI draw order.
+
+Step 9. Tag extension and safety
+- Task
+  - Document how to add a new tag: add enum -> handle in JokerManager switch -> expose fields in JokerTag -> build JokerData
+  - Log warnings for unsupported/malformed tags, but never break the round.
+- Verify
+  - Using an unknown tag prints a warning; game continues.
+- User actions
+  - When designing new jokers, duplicate an existing asset (Right-click -> Duplicate), then edit tags.
+
+Step 10. QA checklist (run each time)
+- Baseline: Player=6, AI=6, turnsToPlay=5, no jokers -> 5 turns, 1 card left.
+- Early termination: Deplete AI hand -> round ends; Restart button enabled.
+- All-In: Rock: Win +20, Draw/Loss big negative; only when playerChoice=Rock.
+- Contrarian: Win 0, Draw 2, Loss 8.
+- Scout: Front/Back info matches actual plays; AI draws from front.
+- Runtime rule change: SetTurnsToPlay updates UI and does not clamp to hand sizes.
+
+Step 11. Cleanup ? remove legacy IJoker-based system
+- Task
+  - Move files to Legacy (optional) then delete after 100% verification:
+    - Assets/Scripts/Jokers/IJoker.cs
+    - Assets/Scripts/Jokers/JokerTypes.cs
+    - Assets/Scripts/Jokers/AllInRockJoker.cs
+    - Assets/Scripts/Jokers/ContrarianJoker.cs
+    - Assets/Scripts/Jokers/ScoutJoker.cs
+  - Remove any references to JokerType in code and scenes.
+  - Remove CreateInstance factory from JokerManager.
+- Verify
+  - Project compiles and runs with only tag-based system.
+- User actions
+  - In Project view, Right-click each file -> Delete (or move to Assets/Scripts/Jokers/Legacy first).
+  - Open scenes and ensure no missing script warnings on objects; reassign HUD buttons to asset-based methods.
+
+Definition of Done
+- All steps green in Play Mode and logs.
+- Designers can create new jokers via assets without code changes for existing tags.
+- System tolerates unknown tags with warnings.
+- Legacy IJoker classes/enums removed; JokerManager fully tag/data-driven.
