@@ -1,0 +1,215 @@
+<New_Rock_Paper_Scissors> Core Loop Prototype PRD (Product Requirements Document)
+
+1. Product Goal
+The objective of this prototype is to evaluate the fun of the most basic game loop of 
+
+<New_Rock_Paper_Scissors>: the process of finding the optimal move over 5 turns while knowing the composition of the opponent's hand. This will serve to verify if the core mechanics are sufficiently engaging and robust before adding complex systems like Jokers.
+
+
+2. Feature Specifications
+2.1. Game Round Flow
+
+Round Start: When the game begins, the system will randomly generate the AI's 5-card hand and initialize all variables (score, turn).
+
+
+Information Display: The types and quantities of the cards held by the AI will be displayed to the player via text.
+
+
+Turn Progression (5 turns total):
+
+The player selects one of three buttons: 'Rock', 'Paper', or 'Scissors'.
+
+The AI randomly selects and plays one card from its remaining hand.
+
+The result (Win/Draw/Loss) is determined and the score is recorded.
+
+The information about the AI's remaining hand composition is updated.
+
+
+Round End: After the 5th turn concludes, the final score is displayed and a 'Restart' button is activated.
+
+2.2.
+Detailed Core Features
+
+
+
+AI Hand Generation: At the start of a round, 5 cards will be randomly selected from 'Rock', 'Paper', and 'Scissors' and stored in a list.
+
+Player Input: The player submits their choice via the 'Rock', 'Paper', or 'Scissors' buttons. The game will wait for this input before proceeding.
+
+
+Result Determination: Follows standard Rock-Paper-Scissors rules.
+
+
+Scoring System:
+
+Win: 5 points
+
+Draw: 3 points
+
+Loss: 0 points
+
+
+UI Feedback: The following information must be updated on-screen immediately each turn:
+
+The AI's remaining hand composition
+
+The current turn number (e.g., "3/5")
+
+The current cumulative score
+
+The result of the turn (e.g., "Win!")
+
+
+3. Technical Specifications
+3.1.
+Development Environment
+
+
+
+Engine: Unity 6000.0.56f
+
+
+Render Pipeline: Universal Render Pipeline (URP), configured for a 2D environment
+
+3.2.
+Core Classes and Data Structures
+
+
+GameManager.cs
+
+
+Description: The core controller class that manages all game states and flow.
+
+
+Key Variables:
+
+C#
+
+// --- Game State Variables ---
+private List<Choice> aiHand; // A list to store the AI's remaining cards
+private int currentTurn; // The current turn (1-5) [cite: 15]
+private int currentScore; // The current score [cite: 15]
+
+// --- UI Reference Variables ---
+public TextMeshProUGUI aiHandText; // Text for AI hand info [cite: 16]
+public TextMeshProUGUI turnText; // Text for the current turn [cite: 16]
+public TextMeshProUGUI scoreText; // Text for the current score [cite: 16]
+public TextMeshProUGUI resultText; // Text for the turn result [cite: 17]
+public GameObject restartButton; // The restart button game object [cite: 17]
+Key Functions:
+
+C#
+
+void StartRound(); // Initializes and starts the game
+void PlayerMakesChoice(Choice playerChoice); // The main logic called upon player selection [cite: 18]
+void UpdateUI(); // Updates all UI text elements to reflect the current state [cite: 18]
+void EndRound(); // Called after 5 turns to end the round
+Choice (enum)
+
+
+Description: An enum to clearly manage the Rock, Paper, and Scissors choices.
+
+
+Structure:
+
+C#
+
+public enum Choice { Rock, Paper, Scissors }
+4. Features Out of Scope
+To focus on the prototype's objectives, the following features are explicitly excluded from the scope of work:
+
+Joker System
+
+Consumables System
+
+Stage, Boss, and Score Hurdle Systems
+
+All sound, animations, and visual effects (VFX)
+
+Title screen and any other UI screens
+
+
+
+====================
+Addendum / Handover (Prototype Iteration with Modular Jokers)
+====================
+
+A. Summary of Tasks Completed
+- Core loop refactor to 6-card hands (default) and 5 turns (configurable via Inspector).
+- Inspector configurables: handSize, turnsToPlay, guaranteedRocks/Papers/Scissors, playerRerollMax.
+- Reroll: allowed only before Turn 1, regenerates player hand with guaranteed counts, then shuffles.
+- DEBUG HUD: runtime toggles for Jokers, shows Current (highest priority) and full Pipeline.
+- Modular Joker architecture implemented (IJoker + JokerManager) with multi-toggle and ordered pipeline.
+- Scout information fix: shows first card and the actual last-play turn card (not the unused 6th), aligned with AI drawing from front when Scout is active.
+- Additive scoring pipeline: Jokers modify the base rule (Win +5 / Draw +3 / Loss +0) by adding deltas, enabling safe synergies.
+
+B. Current Rule Set (overrides/extends earlier sections)
+- Default: Player/AI each receive 6 cards; turnsToPlay defaults to 5. Both values are configurable in Inspector.
+- Base scoring remains: Win +5, Draw +3, Loss +0. All Joker effects are additive deltas to this base.
+- AI draw policy: if Scout is active, AI draws from the front of its hand for consistency with revealed information; otherwise random from remaining.
+
+C. Modular Joker System
+- Interface (IJoker)
+  - string Name { get; }
+  - void OnRoundStart(GameManager gm) // info/one-shot hooks
+  - int ApplyScoreModification(int score, ref int currentTotal, Choice playerChoice, Outcome outcome) // additive, returns new score
+- Manager (JokerManager)
+  - Multiple Jokers can be active simultaneously (toggle per type).
+  - Ordered pipeline by toggle sequence; the last toggled Joker has the highest priority (applied last).
+  - Methods: ToggleJoker(type), SetJoker(type) [single mode], OnRoundStart(gm), OnJokerToggled(gm), ModifyScore(...).
+  - Properties: CurrentJokerName (highest priority), ActiveJokersDescription (ordered list), AIDrawFromFront (true if Scout active).
+
+D. Implemented Jokers (additive deltas)
+- All-In: Rock
+  - Target: playerChoice == Rock
+  - Win: +15 (=> base 5 + 15 = 20), Draw/Loss: -9999 (catastrophic risk)
+- The Contrarian
+  - Target: all
+  - Win: -5 (=> 0), Draw: -1 (=> 2), Loss: +8 (=> 8)
+- Scout
+  - Target: information
+  - On round start or when toggled, shows AI first card and actual last-turn card (uses GameManager.PeekAIFront/PeekAIBack).
+  - Forces AI to draw from the front for determinism while active.
+
+E. DEBUG HUD (DEBUGHUD.cs)
+- Buttons toggle each Joker: None (clears all), AllInRock, Contrarian, Scout.
+- Text fields show: Current (highest priority) and Pipeline (ordered active Jokers).
+- Optionally call JokerManager.OnJokerToggled(GameManager) after each toggle to re-emit info messages.
+
+F. GameManager Hooks / APIs
+- SetTurnsToPlay(int newTurns, bool refreshJokerInfo = true): clamps to [1, handSize], updates UI, re-emits info.
+- RefreshJokerInfo(): re-emits info-only Joker messages (e.g., Scout) without toggling.
+- PeekAIFront(): first AI card. PeekAIBack(): last-play turn AI card based on remaining turns and currentTurn.
+
+G. Configuration & Validation
+- handSize >= 1; turnsToPlay clamped to [1, handSize].
+- guaranteed counts auto-reduced if their sum exceeds handSize (reduce S -> P -> R order).
+- Reroll allowed only before any card is played (currentTurn == 1 and full hand present).
+
+H. Design Decisions (Priority & Synergy)
+- Priority resolution: last toggled Joker is applied last in the additive pipeline (highest precedence). Deterministic and designer-friendly.
+- Additive-only score mutations: avoids destructive overwrites and enables stacking synergies across up to ~30 Jokers.
+- Information Jokers (e.g., Scout) avoid score side-effects; they alter draw policy or surface information.
+
+I. Future Joker Expansion Guidelines (target ~30)
+- Prefer one of these categories and hooks:
+  1) Scoring modifiers: implement ApplyScoreModification with clear targets (by Choice, outcome, or turn index).
+  2) Information providers: implement OnRoundStart to publish info, avoid non-determinism; consider extra helpers in GameManager as needed.
+  3) Flow modifiers: if new hooks are needed (e.g., pre/post-play), consider extending the interface thoughtfully (e.g., IMatchHooks with optional methods).
+- Keep effects additive or composable. If a hard reset is needed (e.g., zeroing total), document as exceptional.
+- Document dependencies/assumptions (e.g., requires AIDrawFromFront) and potential conflicts.
+- Provide a one-line Name and short description for HUD visibility.
+- Testing: add console logs with concise, parseable format for Sheets export.
+
+J. Test Checklist
+- Core loop with handSize=6, turnsToPlay=5: 5 turns play; 1 card remains.
+- DEBUG HUD toggles: multiple Jokers active; Current and Pipeline reflect order; toggling again disables.
+- All-In: Rock scenarios: Rock Win/Draw/Loss additive deltas correct.
+- Contrarian scenarios: Win/Draw/Loss additive deltas correct.
+- Scout: first and last-turn info matches actual AI plays; AI draws from front while active.
+- External rule changes: SetTurnsToPlay at runtime updates Turn UI and re-issues info when requested.
+
+K. Out of Scope (updated)
+- Formal in-game Joker selection UI beyond DEBUG HUD.
+- Non-text presentation (SFX/VFX/animation), full meta-systems (consumables, stages, hurdles), title/other screens.
