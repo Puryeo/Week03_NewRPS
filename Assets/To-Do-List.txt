@@ -1,0 +1,76 @@
+New_Rock_Paper_Scissors ? Tag-based Joker System To-Do List (Step-by-Step)
+
+Purpose
+- Implement a data-driven, tag-based Joker system per PRD section L, with small, testable steps.
+- Keep turnsToPlay independent from hand sizes; end round early if a side runs out of cards.
+- Include Unity editor instructions so non-engineers can follow along.
+
+Ground Rules
+- Do not implement all features at once. Complete each step, then test in Play Mode.
+- Keep GameManager working at every step (no breaking changes).
+- Commit after each green Play test.
+
+Codebase Audit (Scripts folder)
+- Assets/Scripts/GameManager.cs
+  - Status: DONE. Uses tag pipeline (GameContext + ExecuteTurnSettlementEffects).
+- Assets/Scripts/DEBUGHUD.cs
+  - Status: DONE. Asset-based toggles; shows CurrentText/PipelineText; calls OnJokerToggled.
+- Assets/Scripts/Jokers/JokerManager.cs
+  - Status: DONE. Tag interpreter/executor; RoundStart + TurnSettlement; AIDrawFromFront per round; validation logs; unified RPSLog events.
+- Assets/Scripts/Jokers/IJoker.cs
+  - Status: REMOVED (legacy cleanup).
+- Assets/Scripts/Jokers/JokerTypes.cs
+  - Status: REMOVED (legacy cleanup).
+- Assets/Scripts/Jokers/AllInRockJoker.cs, ContrarianJoker.cs, ScoutJoker.cs
+  - Status: REMOVED (legacy cleanup).
+
+Folder Plan (created)
+- Assets/Scripts/Jokers/Data
+- Assets/Scripts/Jokers/Runtime
+- Assets/JokerAssets (ScriptableObjects live here)
+- Assets/Scripts/Jokers/Legacy (not used; legacy removed)
+
+Step 0. Scene and basic setup
+- DONE
+
+Step 1. Data model skeleton (no logic yet)
+- DONE (JokerData, JokerTag, JokerEnums, GameContext)
+
+Step 2. Refactor JokerManager to tag-based skeleton
+- DONE
+
+Step 3. Minimal integration sanity check
+- DONE (OnRoundStart wired)
+
+Step 4. Tag schema v1 + timing pipeline
+- DONE (Timing/Condition/Effect; AddScoreDelta, ForceAIDrawFromFront, ShowInfo)
+
+Step 5. Create sample JokerData assets (expressed via tags)
+- TODO (authoring in Unity Editor)
+  - All_In_Rock
+  - The_Contrarian
+  - Scout
+
+Step 6. Refactor DEBUGHUD to asset-based toggles
+- DONE
+
+Step 7. Switch score pipeline in GameManager to tags
+- DONE
+
+Step 8. Scout info and draw policy via tags
+- DONE (RoundStart apply draw policy; ShowInfo uses PeekAIFront/PeekAIBack)
+
+Step 9. Tag extension and safety
+- DONE (validation warnings and safe fallbacks)
+
+Step 10. QA checklist (run each time)
+- TODO (manual test per PRD section J)
+
+Step 11. Cleanup ? remove legacy IJoker-based system
+- DONE (files deleted; references removed)
+
+Definition of Done
+- Designers can create new jokers via assets without code changes for existing tags. (YES)
+- System tolerates unknown tags with warnings. (YES)
+- Legacy IJoker classes/enums removed; JokerManager fully tag/data-driven. (YES)
+- PRD updated and in sync with implementation. (YES)
