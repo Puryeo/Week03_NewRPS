@@ -4,6 +4,36 @@ Scope
 - No code implementation in this pass. Define tags, gaps, and a safe rollout plan per idea.
 - Keep compatibility with current tag interpreter; avoid breaking existing Jokers.
 
+Handover Notes (for implementation start)
+- Current state (implemented)
+  - Tag engine timings: RoundStart, TurnSettlement
+  - Conditions/Effects: listed below; includes PlayerHasMoreOfChoiceThanAI and ReplaceAIRandomCardsToChoice
+  - GameContext: turnIndex, turnsPlanned, isLastTurn, playerHistory, outcomeHistory
+  - JokerManager: round-start AI hand mutation, ForceAIDrawFromFront; validation warnings; unified RPSLog
+  - Archetypes: Anchor, Payoff, Catalyst, Utility, Risk on JokerData
+- Immediate next steps (Phase A, no engine code):
+  - Author assets: Scissors_Collector, Blade_of_Vengeance, Glass_Scissors, Sturdy_Barricade, Landslide, Force_Of_Nature, Devils_Contract, Blueprint(Paper_Dominance)
+  - Validate via Play Mode and RPSLog deltas/multipliers
+- When starting Phase B/C/D (engine work) implement in this order:
+  1) Small additions (Phase B): TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RevealNextAICard, RerollUsedEquals (+plumb reroll usage)
+  2) Hooks & hand ops (Phase C): add RoundPrepare, TurnStart; AddCardsToPlayer/AIHand, ModifyTurnsToPlayDelta; PlayerHasAtLeastCountInHand
+  3) RoundEnd total (Phase D): add FinalTotalMultiplier and RoundEnd timing; ensure single application/order
+- API checklist before coding
+  - JokerEnums: add Timing (RoundPrepare, TurnStart, RoundEnd), new Conditions/Effects per phases
+  - GameContext: add rerollsUsed (or accessor), totalMultiplier (default=1)
+  - JokerManager: add OnRoundPrepare(GameManager), OnTurnStart(GameContext); apply RoundEnd totalMultiplier once; log with RPSLog
+  - GameManager: call RoundPrepare after hand generation; helpers for hand add/turns delta; GetRerollsUsed()
+- Ordering/determinism rules
+  - Phase order: Prepare ¡æ Start ¡æ Judge ¡æ Settlement ¡æ End
+  - Multipliers: apply in pipeline order; avoid duplicate application (document single-apply)
+  - RevealNextAICard: prefer front-only; require AIDrawFromFront or emit info-only message
+  - RNG determinism: fixed seed/order; use toggle order as priority (last toggled = highest)
+- Testing and logging
+  - Use RPSLog: HandMut, TurnsMut, TurnStart, TurnResolve, RoundEnd, Reveal, Joker events
+  - Extend PRD Test Checklist with RoundPrepare/TurnStart and FinalTotalMultiplier cases
+- Documentation sync
+  - After each phase, update PRD sections C/G/M/N and this file (completed/remaining)
+
 Current tag capabilities (implemented)
 - Timing: RoundStart, TurnSettlement
 - Condition: OutcomeIs, PlayerChoiceIs, PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn, PlayerHasMoreOfChoiceThanAI
@@ -26,7 +56,7 @@ Gaps to consider (new tags/hooks)
   - ModifyTurnsToPlayDelta: mutate turnsToPlay by intValue at RoundPrepare/Start
   - IgnoreBossPenalty: flag for later systems (no-op now; safe to log)
   - AddCardsToPlayerHand/AddCardsToAIHand: push choiceParam cards by intValue at RoundPrepare
-  - InvertOutcome (SwapWinLoss): flips outcome before scoring; HIGH RISK, needs pipeline order rules
+  - FinalTotalMultiplier: multiply final total score at RoundEnd (supports negative multipliers)
 
 Idea-by-idea plan
 
@@ -115,9 +145,10 @@ Idea-by-idea plan
 - Status: NEED NEW EFFECTS + TIMING.
 
 15) Great_Earthquake
-- Spec: If turnIndex==5 and played Rock, invert all outcomes (Win<->Loss) that turn.
-- Needs: Condition TurnIndexIs(5), PlayerChoiceIs(Rock); Effect InvertOutcome
-- Status: HIGH RISK NEW EFFECT (scoring reflow). Requires outcome recomputation order and logger audit.
+- Spec: If turnIndex==5 and played Rock, at RoundEnd multiply FINAL TOTAL score by -1 (sign flip).
+- Needs: Condition TurnIndexIs(5), PlayerChoiceIs(Rock); Timing=RoundEnd; Effect FinalTotalMultiplier(-1)
+- Status: NEED NEW TIMING + EFFECT; MEDIUM RISK (final total mutation, but avoids outcome recomputation).
+- Notes: Implement via RoundEnd hook or last-turn settlement with a total-multiplier field applied once.
 
 16) Force_Of_Nature
 - Spec: If Rock used 5 times in round, x2 final score.
@@ -180,7 +211,7 @@ Proposed incremental implementation order (lowest risk first)
   - Add Condition PlayerHasAtLeastCountInHand
 - Phase D (advanced):
   - Effects IgnoreBossPenalty (no-op flag until system exists)
-  - Effect InvertOutcome (define pipeline order, re-run scoring?)
+  - Effect FinalTotalMultiplier (RoundEnd hook); ensure single application and order vs other RoundEnd effects
   - Hand size deltas (Slave_Contract) with UI/validation coupling
 
 Authoring template (example)
@@ -198,17 +229,17 @@ Authoring template (example)
   - Effect: AddScorePerPlayerHandCount(choice=Rock, intValue=2)
 
 Engine work items (no code now; design only)
-- Define new enums in JokerEnums: TurnStart, RoundEnd, RoundPrepare (Timing); TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, PlayerHasAtLeastCountInHand, RerollUsedEquals (Condition); RevealNextAICard, AddScorePerPlayerHandCount, ModifyTurnsToPlayDelta, AddCardsToPlayerHand, AddCardsToAIHand, IgnoreBossPenalty, InvertOutcome (Effect)
-- Extend GameContext: rerollsUsed, playerHandCountByChoice (or query via GameManager), and expose a safe API in GameManager for hand edits and peek
-- JokerManager: add switches for new tags; ensure order: outcome mutation (before baseScore?) vs after; decide and document
-- Logging: RPSLog entries for new effects, especially hand mutation and rule changes
+- Define new enums in JokerEnums: TurnStart, RoundEnd, RoundPrepare (Timing); TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, PlayerHasAtLeastCountInHand, RerollUsedEquals (Condition); RevealNextAICard, AddScorePerPlayerHandCount, ModifyTurnsToPlayDelta, AddCardsToPlayerHand, AddCardsToAIHand, IgnoreBossPenalty, FinalTotalMultiplier (Effect)
+- Extend GameContext: rerollsUsed, playerHandCountByChoice (or query via GameManager), totalMultiplier (for RoundEnd), and expose a safe API in GameManager for hand edits and peek
+- JokerManager: add switches for new tags; ensure RoundEnd phase applies totalMultiplier once; document order vs TurnSettlement
+- Logging: RPSLog entries for new effects, especially hand/turns mutations and RoundEnd total mutation
 - Validation: guard against negative or exceeding hand sizes; clamp and warn
 
 Test checklist additions
 - Verify RoundPrepare hooks do not conflict with RoundStart effects
 - TurnStart additive scoring runs before outcome; ensure delta is included once
 - RevealNextAICard deterministic when AIDrawFromFront is active; otherwise specify behavior
-- InvertOutcome: verify score recomputation and other effects don¡¯t double-apply
+- FinalTotalMultiplier: round-end sign flip multiplies final total once; interacts predictably with other RoundEnd multipliers
 
 Notes
 - Boss penalty and other meta systems are out-of-scope; implement as flags with no-op until systems exist
