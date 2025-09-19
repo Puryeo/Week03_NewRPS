@@ -1,0 +1,215 @@
+Joker Implementation Tasks (from '# 조커 아이디어.txt')
+
+Scope
+- No code implementation in this pass. Define tags, gaps, and a safe rollout plan per idea.
+- Keep compatibility with current tag interpreter; avoid breaking existing Jokers.
+
+Current tag capabilities (implemented)
+- Timing: RoundStart, TurnSettlement
+- Condition: OutcomeIs, PlayerChoiceIs, PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn, PlayerHasMoreOfChoiceThanAI
+- Effect: AddScoreDelta, FinalScoreMultiplier, ForceAIDrawFromFront, ShowInfo, ReplaceAIRandomCardsToChoice
+- GameContext supports: playerChoice, outcome, baseScore, currentTotal, scoreDelta, turnIndex, turnsPlanned, isLastTurn, playerHistory, outcomeHistory
+
+Gaps to consider (new tags/hooks)
+- Timing
+  - TurnStart: hook before outcome is determined each turn
+  - RoundEnd (a.k.a. RoundSettlement): hook after last turn scoring is applied
+  - RoundPrepare: hook after hand generation, before RoundStart effects (cleaner for hand size edits)
+- Condition
+  - TurnIndexIs: intValue exact match (or Between)
+  - ConsecutiveOutcomeWithChoiceIs: outcomeParam + choiceParam repeated intValue times (generalizes Draw-only case)
+  - PlayerHasAtLeastCountInHand: at RoundStart/Prepare compare current hand counts vs intValue
+  - RerollUsedEquals: check rerolls used (requires GameContext.rerollsUsed or accessor)
+- Effect
+  - RevealNextAICard: call GameManager.PeekAIFront and display
+  - AddScorePerPlayerHandCount: adds intValue per card of choiceParam in player hand (TurnStart-friendly)
+  - ModifyTurnsToPlayDelta: mutate turnsToPlay by intValue at RoundPrepare/Start
+  - IgnoreBossPenalty: flag for later systems (no-op now; safe to log)
+  - AddCardsToPlayerHand/AddCardsToAIHand: push choiceParam cards by intValue at RoundPrepare
+  - InvertOutcome (SwapWinLoss): flips outcome before scoring; HIGH RISK, needs pipeline order rules
+
+Idea-by-idea plan
+
+[Scissors] Anchor
+1) Scissors_Collector
+- Spec: If played Scissors at least 2 times in round, +10 at round end.
+- Tags now: Timing=TurnSettlement + Conditions: PlayedAtLeastCount(Scissors, >=2) + IsLastTurn(1) + Effect=AddScoreDelta(+10)
+- Status: IMPLEMENTABLE NOW (no new tags).
+- Tests: play Scissors 1/2 times; ensure single application at round end.
+
+2) Twin_Blades
+- Spec: Two consecutive wins with Scissors -> round total x2 at that turn end.
+- Needs: Condition ConsecutiveOutcomeWithChoiceIs(outcome=Win, choice=Scissors, intValue=2)
+- Effect: FinalScoreMultiplier(x2) (already immediate)
+- Status: NEED NEW CONDITION.
+- Notes: Trigger window: exactly on second win; decide if longer streak also triggers (>=2).
+
+3) Blade_of_Vengeance
+- Spec: If Loss with Scissors, +2 (text says +5; example shows +2). Choose one.
+- Tags now: Timing=TurnSettlement + Conditions: OutcomeIs(Loss), PlayerChoiceIs(Scissors) + Effect=AddScoreDelta(+5)
+- Status: IMPLEMENTABLE NOW.
+
+[Scissors] Payoff
+4) Perfect_Tailoring
+- Spec: All wins are with Scissors only across 5 turns -> x2 at round end.
+- Needs: Condition "WinsOnlyWithChoice" or derived with history:
+  - Option A (NEW): WinsOnlyWithChoice(choice=Scissors)
+  - Option B (EXPR): PlayedAtLeastCount(Scissors, >=1) AND NoWinWithOtherChoices (needs new)
+- Status: NEED NEW CONDITION.
+
+5) Tailors_Pride
+- Spec: At round prepare, if player hand has >=4 Scissors, increase turnsToPlay by 1.
+- Needs: Condition PlayerHasAtLeastCountInHand(choice=Scissors, intValue=4)
+- Effect: ModifyTurnsToPlayDelta(+1)
+- Timing: RoundPrepare preferred (or RoundStart as fallback).
+- Status: NEED NEW CONDITION + EFFECT + TIMING (RoundPrepare).
+
+6) Exploiting_Weakness
+- Spec: At prepare, if player hand has >=3 Scissors, ignore boss penalty.
+- Needs: Condition PlayerHasAtLeastCountInHand; Effect IgnoreBossPenalty (no-op for now)
+- Status: NEED NEW CONDITION + EFFECT + TIMING; OUT-OF-SCOPE runtime effect until boss system exists.
+
+[Scissors] Catalyst
+7) Glass_Scissors
+- Spec: Win with Scissors +10; Loss with Scissors -15.
+- Tags now: Two entries with Timing=TurnSettlement + (OutcomeIs, PlayerChoiceIs) + AddScoreDelta(+10 / -15)
+- Status: IMPLEMENTABLE NOW.
+
+8) Mass_Production (Scissors)
+- Spec: At prepare, both Player and AI receive +2 Scissors.
+- Needs: Effects AddCardsToPlayerHand/AIHand(choice=Scissors, count=2); Timing RoundPrepare
+- Status: NEED NEW EFFECTS + TIMING.
+
+[Rock] Anchor
+9) Sturdy_Barricade
+- Spec: Draw with Rock -> +5.
+- Tags now: Timing=TurnSettlement + Conditions: OutcomeIs(Draw), PlayerChoiceIs(Rock) + AddScoreDelta(+5)
+- Status: IMPLEMENTABLE NOW.
+
+10) Geological_Survey
+- Spec: Loss with Rock -> reveal opponent next card.
+- Needs: Effect RevealNextAICard (TurnSettlement)
+- Status: NEED NEW EFFECT.
+- Note: Decide determinism coupling with AIDrawFromFront (Scout). OK to reveal front only.
+
+[Rock] Payoff
+11) Ore_Vein
+- Spec: At turn start, +2 per Rock in hand.
+- Needs: Timing=TurnStart + Effect AddScorePerPlayerHandCount(choice=Rock, per=2)
+- Status: NEED NEW TIMING + EFFECT.
+
+12) Landslide
+- Spec: At round end, if Rock used >=3 times, +20.
+- Tags now: Timing=TurnSettlement + Conditions: PlayedAtLeastCount(Rock, >=3), IsLastTurn(1) + AddScoreDelta(+20)
+- Status: IMPLEMENTABLE NOW.
+
+13) Iron_Heart
+- Spec: At round end, if no reroll used, +20.
+- Needs: Condition RerollUsedEquals(0) (requires context.rerollsUsed)
+- Status: NEED NEW CONDITION + GameContext plumb (expose rerolls used or derive: playerRerollMax - playerRerollsLeft).
+
+[Rock] Catalyst
+14) Resource_Explosion (Rock)
+- Spec: At prepare, both sides +2 Rock.
+- Needs: AddCardsToPlayerHand/AIHand; Timing RoundPrepare
+- Status: NEED NEW EFFECTS + TIMING.
+
+15) Great_Earthquake
+- Spec: If turnIndex==5 and played Rock, invert all outcomes (Win<->Loss) that turn.
+- Needs: Condition TurnIndexIs(5), PlayerChoiceIs(Rock); Effect InvertOutcome
+- Status: HIGH RISK NEW EFFECT (scoring reflow). Requires outcome recomputation order and logger audit.
+
+16) Force_Of_Nature
+- Spec: If Rock used 5 times in round, x2 final score.
+- Tags now: Timing=TurnSettlement + Conditions: PlayedAtLeastCount(Rock, >=5), IsLastTurn(1) + FinalScoreMultiplier(x2)
+- Status: IMPLEMENTABLE NOW.
+
+[Paper] Anchor
+17) Confidential_Document
+- Spec: Win with Paper -> reveal opponent next card.
+- Needs: Effect RevealNextAICard (TurnSettlement)
+- Status: NEED NEW EFFECT.
+
+[Paper] Payoff
+18) Blank_Check
+- Spec: 3 wins with Paper only -> x2 final.
+- Needs: Condition WinsOnlyWithChoice(choice=Paper) or ConsecutiveOutcomeWithChoiceIs (wins total N). Better: WinsCountWithChoiceAtLeast(choice=Paper, intValue=3) AND NoWinWithOtherChoices.
+- Status: NEED NEW CONDITION(S).
+
+19) Perfect_Signature
+- Spec: Paper used >=3 -> ignore boss penalty at round end.
+- Needs: PlayedAtLeastCount(Paper, >=3) available; Effect IgnoreBossPenalty needed.
+- Status: NEED NEW EFFECT.
+
+20) Final_Royalty
+- Spec: If turnIndex==5 and Win with Paper, +20.
+- Needs: Condition TurnIndexIs(5) (new), OutcomeIs(Win), PlayerChoiceIs(Paper); Effect AddScoreDelta(+20)
+- Status: NEED NEW CONDITION.
+
+21) Blueprint (Paper_Dominance)
+- Spec: At round start, if Player has more Paper than AI, replace 2 random AI cards to Rock.
+- Tags now: Timing=RoundStart + Condition PlayerHasMoreOfChoiceThanAI(choice=Paper) + Effect ReplaceAIRandomCardsToChoice(to=Rock, count=2)
+- Status: IMPLEMENTED IN ENGINE; just needs asset authoring.
+
+[Paper] Catalyst
+22) Devils_Contract
+- Spec: Win with Paper +20; Loss with Paper -30.
+- Tags now: two TurnSettlement entries with AddScoreDelta.
+- Status: IMPLEMENTABLE NOW.
+
+23) Inflation (Paper)
+- Spec: At prepare, both sides +2 Paper.
+- Needs: AddCardsToPlayerHand/AIHand; Timing RoundPrepare.
+- Status: NEED NEW EFFECTS + TIMING.
+
+24) Slave_Contract
+- Spec: At prepare, player hand size +2, AI hand size +1 (affects generation).
+- Needs: Effects ModifyPlayerHandSizeDelta(+2), ModifyAIHandSizeDelta(+1); Timing RoundPrepare; AND regenerate/deal extra cards coherently.
+- Status: NEW EFFECTS + TIMING; MEDIUM RISK (hand regen coupling).
+
+Proposed incremental implementation order (lowest risk first)
+- Phase A (no new tags required): 1,3,7,9,12,16,22,21(asset only) ⇒ author assets and validate
+- Phase B (small additions):
+  - Add Condition TurnIndexIs
+  - Add Effect RevealNextAICard
+  - Add Condition ConsecutiveOutcomeWithChoiceIs (generalized)
+  - Add Condition RerollUsedEquals (and plumb reroll usage)
+- Phase C (prepare/turnstart hooks and hand ops):
+  - Add Timing RoundPrepare, TurnStart
+  - Add Effects AddCardsToPlayerHand/AIHand, ModifyTurnsToPlayDelta
+  - Add Condition PlayerHasAtLeastCountInHand
+- Phase D (advanced):
+  - Effects IgnoreBossPenalty (no-op flag until system exists)
+  - Effect InvertOutcome (define pipeline order, re-run scoring?)
+  - Hand size deltas (Slave_Contract) with UI/validation coupling
+
+Authoring template (example)
+- Twin_Blades.asset
+  - Timing: TurnSettlement
+  - Conditions: ConsecutiveOutcomeWithChoiceIs(outcome=Win, choice=Scissors, intValue=2)
+  - Effect: FinalScoreMultiplier(intValue=2)
+- Geological_Survey.asset
+  - Timing: TurnSettlement
+  - Conditions: OutcomeIs(Loss), PlayerChoiceIs(Rock)
+  - Effect: RevealNextAICard()
+- Ore_Vein.asset (after TurnStart support)
+  - Timing: TurnStart
+  - Conditions: PlayerHasAtLeastCountInHand(choice=Rock, intValue>=1)
+  - Effect: AddScorePerPlayerHandCount(choice=Rock, intValue=2)
+
+Engine work items (no code now; design only)
+- Define new enums in JokerEnums: TurnStart, RoundEnd, RoundPrepare (Timing); TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, PlayerHasAtLeastCountInHand, RerollUsedEquals (Condition); RevealNextAICard, AddScorePerPlayerHandCount, ModifyTurnsToPlayDelta, AddCardsToPlayerHand, AddCardsToAIHand, IgnoreBossPenalty, InvertOutcome (Effect)
+- Extend GameContext: rerollsUsed, playerHandCountByChoice (or query via GameManager), and expose a safe API in GameManager for hand edits and peek
+- JokerManager: add switches for new tags; ensure order: outcome mutation (before baseScore?) vs after; decide and document
+- Logging: RPSLog entries for new effects, especially hand mutation and rule changes
+- Validation: guard against negative or exceeding hand sizes; clamp and warn
+
+Test checklist additions
+- Verify RoundPrepare hooks do not conflict with RoundStart effects
+- TurnStart additive scoring runs before outcome; ensure delta is included once
+- RevealNextAICard deterministic when AIDrawFromFront is active; otherwise specify behavior
+- InvertOutcome: verify score recomputation and other effects don’t double-apply
+
+Notes
+- Boss penalty and other meta systems are out-of-scope; implement as flags with no-op until systems exist
+- Keep additive pipeline predictable; prefer additive/multiplicative effects over destructive rewrites

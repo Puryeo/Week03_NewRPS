@@ -135,14 +135,52 @@ namespace Jokers
                             Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: Condition has None");
                             break;
                         case JokerConditionType.OutcomeIs:
-                            if (context.outcome == Outcome.None)
-                                Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: OutcomeIs with Outcome.None");
                             if (context.outcome != tag.outcomeParam) conditionsOk = false;
                             break;
                         case JokerConditionType.PlayerChoiceIs:
-                            if (context.playerChoice == Choice.None)
-                                Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: PlayerChoiceIs with Choice.None");
                             if (context.playerChoice != tag.choiceParam) conditionsOk = false;
+                            break;
+                        case JokerConditionType.PlayedAtLeastCount:
+                            {
+                                if (tag.choiceParam == Choice.None)
+                                    Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: PlayedAtLeastCount requires choiceParam");
+                                int cnt = 0;
+                                var hist = context.playerHistory;
+                                if (hist != null)
+                                {
+                                    for (int hi = 0; hi < hist.Count; hi++) if (hist[hi] == tag.choiceParam) cnt++;
+                                }
+                                if (cnt < tag.intValue) conditionsOk = false;
+                            }
+                            break;
+                        case JokerConditionType.ConsecutiveDrawWithChoiceIs:
+                            {
+                                if (tag.choiceParam == Choice.None)
+                                    Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: ConsecutiveDrawWithChoiceIs requires choiceParam");
+                                var ph = context.playerHistory;
+                                var oh = context.outcomeHistory;
+                                int needed = tag.intValue > 0 ? tag.intValue : 1;
+                                bool ok = true;
+                                if (ph == null || oh == null || ph.Count != oh.Count || ph.Count < needed)
+                                {
+                                    ok = false;
+                                }
+                                else
+                                {
+                                    for (int k = 0; k < needed; k++)
+                                    {
+                                        int idx = ph.Count - 1 - k;
+                                        if (idx < 0 || ph[idx] != tag.choiceParam || oh[idx] != Outcome.Draw) { ok = false; break; }
+                                    }
+                                }
+                                if (!ok) conditionsOk = false;
+                            }
+                            break;
+                        case JokerConditionType.IsLastTurn:
+                            {
+                                bool expect = (tag.intValue != 0);
+                                if (context.isLastTurn != expect) conditionsOk = false;
+                            }
                             break;
                         default:
                             Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: Unknown condition type {tag.conditionType}");
@@ -155,17 +193,6 @@ namespace Jokers
                 foreach (var eff in data.tags)
                 {
                     if (eff == null || eff.category != JokerTagCategory.Effect) continue;
-
-                    if (eff.effectType == JokerEffectType.None)
-                    {
-                        Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: Effect has None");
-                        continue;
-                    }
-
-                    if (eff.filterByOutcome && eff.outcomeParam == Outcome.None)
-                        Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: filterByOutcome=true with Outcome.None");
-                    if (eff.filterByChoice && eff.choiceParam == Choice.None)
-                        Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: filterByChoice=true with Choice.None");
 
                     if (eff.filterByOutcome && context.outcome != eff.outcomeParam) continue;
                     if (eff.filterByChoice && context.playerChoice != eff.choiceParam) continue;
@@ -184,6 +211,13 @@ namespace Jokers
                             break;
                         case JokerEffectType.ForceAIDrawFromFront:
                             // 결산 타이밍에서는 무시
+                            break;
+                        case JokerEffectType.FinalScoreMultiplier:
+                            // 조건 충족 시 즉시 적용: 이번 턴 점수Delta에 배수 적용
+                            if (eff.intValue > 1)
+                            {
+                                context.scoreDelta *= eff.intValue;
+                            }
                             break;
                         default:
                             Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: Unknown effect type {eff.effectType}");
@@ -214,6 +248,39 @@ namespace Jokers
                 }
                 if (!timingOk) continue;
 
+                // RoundStart 전역 조건 검사 (현재는 핸드 비교 조건만 지원)
+                bool condOk = true;
+                foreach (var c in data.tags)
+                {
+                    if (c == null || c.category != JokerTagCategory.Condition) continue;
+                    switch (c.conditionType)
+                    {
+                        case JokerConditionType.PlayerHasMoreOfChoiceThanAI:
+                            if (gm == null)
+                            { condOk = false; break; }
+                            // GameManager에 헬퍼가 없으면 기본 비교 구현 필요
+                            int playerCount = gm.CountPlayerChoice(c.choiceParam);
+                            int aiCount = gm.CountAIChoice(c.choiceParam);
+                            if (!(playerCount > aiCount)) condOk = false;
+                            break;
+                        case JokerConditionType.IsLastTurn:
+                        case JokerConditionType.PlayedAtLeastCount:
+                        case JokerConditionType.ConsecutiveDrawWithChoiceIs:
+                        case JokerConditionType.OutcomeIs:
+                        case JokerConditionType.PlayerChoiceIs:
+                            // RoundStart에서는 적용 대상 아님 -> 무시
+                            break;
+                        case JokerConditionType.None:
+                            Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: Condition has None");
+                            break;
+                        default:
+                            Debug.LogWarning($"[JokerManager][Validate] {data.jokerName}: Unknown RoundStart condition {c.conditionType}");
+                            break;
+                    }
+                    if (!condOk) break;
+                }
+                if (!condOk) continue;
+
                 foreach (var eff in data.tags)
                 {
                     if (eff == null || eff.category != JokerTagCategory.Effect) continue;
@@ -235,6 +302,13 @@ namespace Jokers
                             if (applyDrawPolicy && eff.intValue != 0)
                             {
                                 _drawFromFrontThisRound = true;
+                            }
+                            break;
+                        case JokerEffectType.ReplaceAIRandomCardsToChoice:
+                            if (gm != null && eff.intValue > 0 && eff.choiceParam != Choice.None)
+                            {
+                                int changed = gm.ReplaceAIRandomCardsTo(eff.choiceParam, eff.intValue);
+                                RPS.RPSLog.Event("Joker", "AIHandMutate", $"name={data.jokerName}, to={eff.choiceParam}, count={changed}");
                             }
                             break;
                         case JokerEffectType.None:

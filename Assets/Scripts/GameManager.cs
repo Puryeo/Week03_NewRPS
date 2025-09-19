@@ -63,6 +63,10 @@ public class GameManager : MonoBehaviour
     private int lossCount = 0;                // 누적 패배 수
     private int playerRerollsLeft = 0;        // 남은 리롤 횟수
 
+    // 라운드 히스토리
+    private List<Choice> playerHistory = new List<Choice>();
+    private List<Outcome> outcomeHistory = new List<Outcome>();
+
     // 턴 수는 손패와 별개로 설정되지만, 실제 플레이는 카드 소진 시 조기 종료될 수 있다.
     private int MaxTurns => Mathf.Max(1, turnsToPlay);
 
@@ -123,6 +127,8 @@ public class GameManager : MonoBehaviour
         aiHand.Clear();
         playerHand.Clear();
         winCount = 0; drawCount = 0; lossCount = 0;
+        playerHistory.Clear();
+        outcomeHistory.Clear();
         rng = new System.Random();
         playerRerollsLeft = playerRerollMax;
 
@@ -278,6 +284,10 @@ public class GameManager : MonoBehaviour
         Outcome outcome = JudgeOutcome(playerChoice, aiChoice);
         int baseScore = ScoreFor(outcome);
 
+        // 라운드 히스토리 업데이트 (이번 턴 포함)
+        playerHistory.Add(playerChoice);
+        outcomeHistory.Add(outcome);
+
         // 태그 기반 점수 파이프라인 적용: GameContext 구성 후 ExecuteTurnSettlementEffects 호출
         int turnDelta;
         if (jokerManager != null)
@@ -289,7 +299,12 @@ public class GameManager : MonoBehaviour
                 outcome = outcome,
                 baseScore = baseScore,
                 currentTotal = currentScore,
-                scoreDelta = baseScore
+                scoreDelta = baseScore,
+                turnIndex = currentTurn,
+                turnsPlanned = MaxTurns,
+                isLastTurn = (currentTurn >= MaxTurns),
+                playerHistory = new List<Choice>(playerHistory),
+                outcomeHistory = new List<Outcome>(outcomeHistory),
             };
             jokerManager.ExecuteTurnSettlementEffects(context);
             turnDelta = context.scoreDelta;
@@ -470,5 +485,31 @@ public class GameManager : MonoBehaviour
             }
         }
         return (r, p, s);
+    }
+
+    // ===== Helpers for JokerManager RoundStart conditions/effects =====
+    public int CountAIChoice(Choice c)
+    {
+        int cnt = 0; for (int i = 0; i < aiHand.Count; i++) if (aiHand[i] == c) cnt++; return cnt;
+    }
+    public int CountPlayerChoice(Choice c)
+    {
+        int cnt = 0; for (int i = 0; i < playerHand.Count; i++) if (playerHand[i] == c) cnt++; return cnt;
+    }
+    public int ReplaceAIRandomCardsTo(Choice to, int count)
+    {
+        if (aiHand == null || aiHand.Count == 0 || count <= 0) return 0;
+        int changed = 0;
+        for (int n = 0; n < count && aiHand.Count > 0; n++)
+        {
+            int idx = rng.Next(0, aiHand.Count);
+            if (aiHand[idx] != to)
+            {
+                aiHand[idx] = to;
+                changed++;
+            }
+        }
+        UpdateUI();
+        return changed;
     }
 }

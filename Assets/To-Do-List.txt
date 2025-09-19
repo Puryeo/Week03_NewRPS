@@ -24,6 +24,9 @@ Codebase Audit (Scripts folder)
 - Assets/Scripts/Jokers/AllInRockJoker.cs, ContrarianJoker.cs, ScoutJoker.cs
   - Status: REMOVED (legacy cleanup).
 
+Archetypes
+- Flags: Anchor, Payoff, Catalyst, Utility, Risk (JokerData.archetypes)
+
 Folder Plan (created)
 - Assets/Scripts/Jokers/Data
 - Assets/Scripts/Jokers/Runtime
@@ -63,14 +66,29 @@ Step 8. Scout info and draw policy via tags
 Step 9. Tag extension and safety
 - DONE (validation warnings and safe fallbacks)
 
+Step 9.1. Round history & meta conditions
+- DONE (GameContext turnIndex/turnsPlanned/isLastTurn; playerHistory/outcomeHistory)
+- DONE Conditions: PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn
+- DONE Effect: FinalScoreMultiplier (applies immediately when conditions met)
+
 Step 10. QA checklist (run each time)
 - TODO (manual test per PRD section J)
 
 Step 11. Cleanup ? remove legacy IJoker-based system
 - DONE (files deleted; references removed)
 
+Step 12. Spawn system (draft)
+- TODO Add JokerSpawnWeights ScriptableObject
+  - per-archetype weights (Anchor/Payoff/Catalyst/Utility/Risk)
+  - optional per-joker overrides list
+- TODO Add JokerSpawnManager
+  - API: GetRandomJoker(IEnumerable<JokerData> pool, JokerSpawnWeights weights)
+  - Filters by archetype mask; applies weights; returns a pick
+  - Deterministic with seed(optional)
+
 Definition of Done
 - Designers can create new jokers via assets without code changes for existing tags. (YES)
 - System tolerates unknown tags with warnings. (YES)
 - Legacy IJoker classes/enums removed; JokerManager fully tag/data-driven. (YES)
 - PRD updated and in sync with implementation. (YES)
+- Spawn system spec captured (weights SO + manager draft). (PENDING)
