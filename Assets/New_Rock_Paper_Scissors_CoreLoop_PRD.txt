@@ -1,5 +1,7 @@
 <New_Rock_Paper_Scissors> Core Loop Prototype PRD (Product Requirements Document)
 
+Note: The Addendum section supersedes any conflicting statements earlier in this document.
+
 1. Product Goal
 The objective of this prototype is to evaluate the fun of the most basic game loop of 
 
@@ -9,31 +11,31 @@ The objective of this prototype is to evaluate the fun of the most basic game lo
 2. Feature Specifications
 2.1. Game Round Flow
 
-Round Start: When the game begins, the system will randomly generate the AI's 5-card hand and initialize all variables (score, turn).
+Round Start: When the game begins, the system will generate the AI's starting hand (default 6 cards; configurable via Inspector) and initialize all variables (score, turn).
 
 
 Information Display: The types and quantities of the cards held by the AI will be displayed to the player via text.
 
 
-Turn Progression (5 turns total):
+Turn Progression (default 5 turns; configurable):
 
 The player selects one of three buttons: 'Rock', 'Paper', or 'Scissors'.
 
-The AI randomly selects and plays one card from its remaining hand.
+The AI selects and plays one card from its remaining hand (front when draw-policy active, otherwise random).
 
 The result (Win/Draw/Loss) is determined and the score is recorded.
 
 The information about the AI's remaining hand composition is updated.
 
 
-Round End: After the 5th turn concludes, the final score is displayed and a 'Restart' button is activated.
+Round End: After the configured last turn concludes, the final score is displayed and a 'Restart' button is activated.
 
 2.2.
 Detailed Core Features
 
 
 
-AI Hand Generation: At the start of a round, 5 cards will be randomly selected from 'Rock', 'Paper', and 'Scissors' and stored in a list.
+AI Hand Generation: At the start of a round, cards will be selected from 'Rock', 'Paper', and 'Scissors' and stored in a list (default 6; configurable).
 
 Player Input: The player submits their choice via the 'Rock', 'Paper', or 'Scissors' buttons. The game will wait for this input before proceeding.
 
@@ -116,11 +118,13 @@ Structure:
 C#
 
 public enum Choice { Rock, Paper, Scissors }
+
+Note: For tag authoring only, a sentinel value Choice.None exists in code. Gameplay UI continues to expose only Rock/Paper/Scissors.
+
 4. Features Out of Scope
 To focus on the prototype's objectives, the following features are explicitly excluded from the scope of work:
 
-Joker System
-
+// Joker System ? superseded by Addendum (see below)
 Consumables System
 
 Stage, Boss, and Score Hurdle Systems
@@ -135,71 +139,79 @@ Title screen and any other UI screens
 Addendum / Handover (Prototype Iteration with Modular Jokers)
 ====================
 
-A. Summary of Tasks Completed
+A. Summary of Tasks Completed (Updated)
 - Core loop refactor to 6-card hands (default) and 5 turns (configurable via Inspector).
 - Inspector configurables: handSize, turnsToPlay, guaranteedRocks/Papers/Scissors, playerRerollMax.
 - Reroll: allowed only before Turn 1, regenerates player hand with guaranteed counts, then shuffles.
-- DEBUG HUD: runtime toggles for Jokers, shows Current (highest priority) and full Pipeline.
-- Modular Joker architecture implemented (IJoker + JokerManager) with multi-toggle and ordered pipeline.
-- Scout information fix: shows first card and the actual last-play turn card (not the unused 6th), aligned with AI drawing from front when Scout is active.
+- DEBUG HUD: runtime toggles for Jokers, shows Current (highest priority) and full Pipeline via CurrentText/PipelineText.
+- Modular Joker architecture implemented (Tag-based JokerData + JokerManager). Legacy IJoker/enum pipeline removed.
+- Scout information fix: shows first card and the actual last-play turn card, aligned with AI drawing from front when active.
 - Additive scoring pipeline: Jokers modify the base rule (Win +5 / Draw +3 / Loss +0) by adding deltas, enabling safe synergies.
 
 B. Current Rule Set (overrides/extends earlier sections)
 - Default: Player/AI each receive 6 cards; turnsToPlay defaults to 5. Both values are configurable in Inspector.
 - Base scoring remains: Win +5, Draw +3, Loss +0. All Joker effects are additive deltas to this base.
-- AI draw policy: if Scout is active, AI draws from the front of its hand for consistency with revealed information; otherwise random from remaining.
+- AI draw policy: if a Joker with ForceAIDrawFromFront is active, AI draws from the front for consistency; otherwise random.
 - Turn count independence: turnsToPlay is independent from hand sizes. If either side runs out of cards before all turns are played, the round ends early.
 
-C. Modular Joker System (Updated: Tag-based, Data-Driven)
-- This section is updated to reflect the tag-based, data-driven architecture. The previous IJoker interface approach is superseded by JokerData assets with standardized tags. See section L for full specifications.
+C. Modular Joker System (Tag-based, Data-Driven Only)
 - Data Model
   - JokerData (ScriptableObject): jokerName, description, tags (List<JokerTag>).
-  - JokerTag: category (enum), type (enum), value (object) for parameterization.
+  - JokerTag: category (Timing/Condition/Effect), type (RoundStart/TurnSettlement etc.), parameters (Outcome/Choice/int/string, filters).
+  - Default values: Choice.None/Outcome.None/JokerTimingType.None are available for “unused” fields.
 - Manager (JokerManager)
   - Acts as Tag Interpreter and Effect Executor.
   - Multiple active Jokers with ordered priority (last toggled = highest).
-  - Exposes properties including AIDrawFromFront (true if Scout-like info tag active).
-  - Executes tag-defined effects at specific timings via public methods (e.g., ExecuteTurnSettlementEffects(GameContext)).
-- Score pipeline remains additive. Effects that modify score do so by adding deltas to the current computation.
+  - Public API: SetJoker(JokerData), ToggleJoker(JokerData), GetCurrentJokerName(), GetPipelineDescription(), AIDrawFromFront.
+  - Executes tag-defined effects at specific timings: OnRoundStart(GameManager), ExecuteTurnSettlementEffects(GameContext).
+  - RoundStart sets AIDrawFromFront=true for this round if ForceAIDrawFromFront tag is present (intValue != 0).
+- Score pipeline is additive: GameManager builds GameContext and JokerManager accumulates scoreDelta via Effect tags.
 
 D. Implemented Jokers (expressed via tags)
-- All-In: Rock
+- All_In_Rock
   - Target: playerChoice == Rock
-  - Win: +15 (=> base 5 + 15 = 20), Draw/Loss: -9999 (catastrophic risk)
-- The Contrarian
+  - Win: +15 (=> base 5 + 15 = 20), Draw/Loss: -9999
+- The_Contrarian
   - Target: all
   - Win: -5 (=> 0), Draw: -1 (=> 2), Loss: +8 (=> 8)
 - Scout
   - Target: information
-  - On round start or when toggled, shows AI first card and actual last-turn card (uses GameManager.PeekAIFront/PeekAIBack).
-  - Forces AI to draw from the front for determinism while active.
+  - On RoundStart or when toggled, shows AI first/last-turn card (GameManager.PeekAIFront/PeekAIBack).
+  - ForceAIDrawFromFront active for the round when enabled.
 
 E. DEBUG HUD (DEBUGHUD.cs)
-- Buttons toggle each Joker: None (clears all), AllInRock, Contrarian, Scout.
-- Text fields show: Current (highest priority) and Pipeline (ordered active Jokers).
-- Optionally call JokerManager.OnJokerToggled(GameManager) after each toggle to re-emit info messages.
+- Buttons toggle each Joker: None (clears all), All_In_Rock, The_Contrarian, Scout.
+- Text fields: CurrentText (highest priority), PipelineText (ordered active Jokers).
+- After each toggle, call JokerManager.OnJokerToggled(GameManager) to re-emit info messages.
 
 F. GameManager Hooks / APIs (Updated)
 - SetTurnsToPlay(int newTurns, bool refreshJokerInfo = true): clamps to [1, +∞), independent from hand sizes; updates UI, re-emits info if requested.
 - RefreshJokerInfo(): re-emits info-only Joker messages (e.g., Scout) without toggling.
 - PeekAIFront(): first AI card. PeekAIBack(): last-play turn AI card based on remaining turns and currentTurn.
+- PlayerMakesChoice flow (scoring):
+  - Compute baseScore via ScoreFor(outcome)
+  - Build GameContext { gameManager, playerChoice, outcome, baseScore, currentTotal, scoreDelta = baseScore }
+  - Call JokerManager.ExecuteTurnSettlementEffects(context)
+  - Add context.scoreDelta to currentScore
 
 G. Configuration & Validation (Updated)
 - Hand sizes: Player and AI can be configured independently.
 - Turns: turnsToPlay >= 1, independent from hand sizes. If fewer cards remain than remaining turns, the round may end early when a side runs out of cards.
 - Guaranteed counts: auto-reduced per side if their sum exceeds that side's hand size (reduce S -> P -> R order).
 - Reroll: allowed only before any card is played (currentTurn == 1) and when the player's hand is full (playerHandSize).
+- JokerData validation: JokerManager logs warnings for None/unused or inconsistent tag parameters to aid authoring.
 
 H. Design Decisions (Priority & Synergy)
 - Priority resolution: last toggled Joker is applied last in the additive pipeline (highest precedence). Deterministic and designer-friendly.
-- Additive-only score mutations: avoids destructive overwrites and enables stacking synergies across up to ~30 Jokers.
+- Additive-only score mutations: avoids destructive overwrites and enables stacking synergies across many Jokers.
 - Information Jokers (e.g., Scout) avoid score side-effects; they alter draw policy or surface information.
+- Naming: prefer underscores instead of colons/spaces in jokerName (e.g., All_In_Rock, The_Contrarian).
 
 I. Future Joker Expansion Guidelines (target ~30)
 - Prefer one of these categories and hooks:
-  1) Scoring modifiers: use tag(s) that modify score by Choice, outcome, or turn index.
+  1) Scoring modifiers: use tags that modify score by Choice, outcome, or turn index.
   2) Information providers: use timing+info tags to publish information deterministically.
-  3) Flow modifiers: introduce new standardized tags when new hooks are needed; extend JokerManager to handle them.
+  3) Flow modifiers: introduce new standardized tags when new hooks are needed; extend JokerManager accordingly.
 - Keep effects additive or composable. If a hard reset is needed (e.g., zeroing total), document as exceptional.
 - Document dependencies/assumptions (e.g., requires AIDrawFromFront) and potential conflicts.
 - Provide a one-line Name and short description for HUD visibility.
@@ -208,9 +220,9 @@ I. Future Joker Expansion Guidelines (target ~30)
 J. Test Checklist (Updated)
 - Core loop with playerHandSize=6, aiHandSize=6, turnsToPlay=5: 5 turns play; 1 card remains (unless a side is depleted earlier).
 - Early termination: If AI runs out of cards before the configured turns finish, the round ends immediately and Restart is enabled.
-- DEBUG HUD toggles: multiple Jokers active; Current and Pipeline reflect order; toggling again disables.
-- All-In: Rock scenarios: Rock Win/Draw/Loss additive deltas correct.
-- Contrarian scenarios: Win/Draw/Loss additive deltas correct.
+- DEBUG HUD toggles: multiple Jokers active; CurrentText and PipelineText reflect order; toggling again disables.
+- All_In_Rock scenarios: Rock Win/Draw/Loss additive deltas correct.
+- The_Contrarian scenarios: Win/Draw/Loss additive deltas correct.
 - Scout: first and last-turn info matches actual AI plays; AI draws from front while active.
 - External rule changes: SetTurnsToPlay at runtime updates Turn UI and re-issues info when requested; not clamped by hand sizes.
 
@@ -218,95 +230,17 @@ K. Out of Scope (updated)
 - Formal in-game Joker selection UI beyond DEBUG HUD.
 - Non-text presentation (SFX/VFX/animation), full meta-systems (consumables, stages, hurdles), title/other screens.
 
+M. Development Summary / Changelog
+- Implemented tag-based Joker system (JokerData + JokerTag + JokerEnums + GameContext). Legacy IJoker/enum removed.
+- JokerManager refactored into a tag interpreter and effect executor. Added ExecuteTurnSettlementEffects and RoundStart handling.
+- Additive scoring pipeline wired in GameManager using GameContext (baseScore -> scoreDelta accumulation).
+- Round-scoped AI draw policy via ForceAIDrawFromFront at RoundStart.
+- DEBUGHUD refactored to asset-based toggles; UI fields renamed to CurrentText/PipelineText.
+- Added unified logging utility (RPSLog) and integrated logs for round/turn/joker events.
+- Added validation warnings for malformed/None tag parameters.
+- PRD updated to reflect 6-card default, tag-only architecture, naming conventions.
 
-L. 상세 PRD: 태그 시스템을 통한 조커 카드 시스템 구조 리팩터링
-L.1. 목표 및 근거 (Goals & Rationale)
-L.1.1. 목표
-본 리팩터링의 목표는 현재 하드코딩된 개별 조커 구현 방식(
-
-All-In: Rock 등)을, '조커 디자인 태그 시스템 최종 정의서(vFinal-2)'에 명시된 태그를 기반으로 하는 데이터 주도(Data-Driven) 아키텍처로 전환하는 것입니다. 이를 통해 향후 30개 이상의 조커를 효율적으로 추가하고 관리할 수 있는 확장 가능한 기반을 마련합니다. 
-
-L.1.2. 근거
-
-확장성 (Scalability): 새로운 조커를 추가할 때마다 별도의 클래스를 작성하는 현재 방식은 비효율적입니다. 태그 시스템은 새로운 코드를 최소화하면서 조커의 조합을 폭발적으로 늘릴 수 있게 합니다.
-
-유지보수성 (Maintainability): 조커의 모든 로직이 태그와 중앙 관리 시스템을 통해 처리되므로, 밸런스 수정 및 버그 수정이 용이해집니다.
-
-
-명확성 (Clarity): 모든 조커의 기능이 표준화된 태그로 정의되어, 기획자와 개발자 간의 소통 오류를 줄이고 디자인 의도를 명확하게 전달할 수 있습니다. 
-
-L.2. 핵심 아키텍처 변경 사항
-L.2.1. 데이터 주도 조커 구현
-모든 조커는 개별 C# 클래스가 아닌, 태그 목록을 포함하는 데이터 에셋(Unity의 ScriptableObject 권장)으로 정의됩니다. 이를 통해 조커의 행동 로직을 코드에서 데이터로 분리합니다.
-
-L.2.2. JokerManager의 역할 재정의
-기존 JokerManager는 리팩터링을 통해 '태그 해석기(Tag Interpreter)' 및 '효과 실행기(Effect Executor)'의 역할을 수행하도록 확장됩니다. JokerManager는 활성화된 조커들의 태그 목록을 순회하며, 게임의 현재 상태와 태그를 비교하여 조건이 맞으면 중앙에서 정의된 효과를 실행합니다.
-
-L.2.3. 논리 실행 흐름
-모든 조커의 효과는 
-
-조커 디자인 태그 시스템 최종 정의서에 명시된 [시점] → [조건] → [효과]의 논리 흐름을 따릅니다. 
-
-JokerManager는 각 시점마다 활성화된 조커들의 [조건] 태그를 검사하고, 충족 시 [효과] 태그에 연결된 로직을 실행합니다.
-
-L.3. 기술 사양 (Technical Specifications)
-L.3.1. JokerData ScriptableObject 정의
-
-jokerName (string): 조커의 이름 (예: "All-In: Rock")
-
-description (string): 조커의 기능 설명 텍스트
-
-tags (List<JokerTag>): 해당 조커의 모든 기능과 조건을 정의하는 태그 목록
-
-L.3.2. JokerTag 클래스/구조체 정의
-
-category (enum): 태그의 대분류 (시점, 역할, 조건, 효과)
-
-type (enum): 태그의 상세 분류 (라운드시작, 결과, 점수:가산 등)
-
-value (object): 태그에 필요한 추가 데이터 (예: [조건:상태:점수>=X]의 X 값)
-
-L.3.3. JokerManager 로직 상세
-JokerManager는 각 [시점]에 맞는 public 함수를 가집니다. 예를 들어, GameManager의 PlayerMakesChoice 함수는 로직 처리 후 JokerManager.ExecuteTurnSettlementEffects()를 호출합니다.
-
-C#
-
-// JokerManager.cs 내의 가상 코드
-public void ExecuteTurnSettlementEffects(GameContext context)
-{
-    // 우선순위에 따라 정렬된 활성화 조커 목록 순회
-    foreach (JokerData joker in activeJokers) 
-    {
-        // 1. 시점 확인: 이 조커가 '턴결산' 시점에 작동하는가?
-        if (joker.HasTag(Category.시점, Type.턴결산))
-        {
-            // 2. 조건 확인: 이 조커의 모든 '조건' 태그가 현재 게임 컨텍스트에서 충족되는가?
-            if (CheckAllConditions(joker, context))
-            {
-                // 3. 효과 실행: 이 조커의 '효과' 태그에 맞는 로직 실행
-                ExecuteAllEffects(joker, context);
-            }
-        }
-    }
-}
-
-L.3.4. 점수 계산 파이프라인 유지
-기존의 '가산 파이프라인' 아키텍처는 그대로 유지됩니다. 
-
-[효과:점수:가산] 태그는 GameContext 내의 점수 변수에 자신의 델타 값을 더하는 방식으로 구현되어, 여러 조커의 효과가 안전하게 중첩됩니다. 
-
-
-L.4. 미래 확장성
-L.4.1. 신규 조커 추가
-새로운 조커를 추가하는 작업은 C# 코드를 작성하는 대신, Unity 에디터 내에서 새로운 JokerData 에셋을 생성하고, 정의된 태그들을 조합하여 설정하는 것으로 간소화됩니다.
-
-L.4.2. 신규 메커니즘(태그) 추가
-향후 '상대방의 리롤 횟수 차감'과 같은 새로운 메커니즘이 필요할 경우, 다음과 같은 표준화된 절차를 따릅니다.
-
-조커 디자인 태그 시스템 최종 정의서에 새로운 [효과] 태그(예: [효과:상대리롤:감소])를 추가하여 문서를 업데이트합니다.
-
-JokerManager에 새로운 태그를 처리할 로직을 추가합니다.
-
-이후 기획자는 이 태그를 사용하여 새로운 조커를 자유롭게 설계할 수 있습니다.
-
-이 구조는 새로운 기능 추가가 기존 시스템에 미치는 영향을 최소화하고, 시스템을 유연하고 확장 가능하게 유지합니다.
+N. Open Items
+- Continue running the Test Checklist each build (manual QA).
+- Future work: introduce new tags when new mechanics are required (postponed).
+    
