@@ -1,3 +1,40 @@
+Overhand Notes (2025-09-20 Draft UI & FlowController)
+- Scope
+  - Implemented runtime Draft flow so gameplay works without DEBUGManager.
+  - Added UI scripts and panel toggling for Offer -> Pipeline -> Game.
+- New runtime components
+  - DraftFlowController (MonoBehaviour): builds Offer(10), enforces pickCount, builds Pipeline, applies Jokers, starts round.
+  - JokerOfferButton: prefab driver for offer entries (Toggle + title/desc + ArchetypeBadge color by archetype).
+  - JokerPipelineItem: prefab driver for pipeline entries (title + Up/Down ordering).
+- Engine/API deltas (non-breaking)
+  - GameManager: added startOnPlay flag (default true). Draft flow uses false and calls StartRoundFromFlow().
+  - JokerLibrary: PickOffer(OfferConfig) already present (weights/quotas/seed); used by runtime.
+- UI flow (panels)
+  - JokerPanel: active on start, shows 10 offers (from library).
+  - PipelinePanel: active after confirm; shows picked items and allows ordering.
+  - GamePanel: inactive until pipeline confirm; becomes active and round starts.
+  - State: Start => [JokerPanel:on, Pipeline:off, Game:off] -> Offer Confirm => [JokerPanel:off, Pipeline:on, Game:off] -> Pipeline Confirm => [Pipeline:off, Game:on].
+- Behavior
+  - Offer: 10 items, pickCount variable; confirm only when exactly pickCount selected.
+  - Pipeline: Up/Down to reorder; confirm applies order to JokerManager (clear, then toggle in order), refreshes info, starts round.
+  - ArchetypeBadge: small Image tinted by archetype for quick visual grouping (Anchor/Payoff/Catalyst/Utility).
+- Acceptance checklist (this pass)
+  - With GameManager.startOnPlay=false, game starts only after pipeline confirm.
+  - Offer confirm disabled until exactly pickCount toggled; exceeding selection auto-reverts UI toggle.
+  - Pipeline order affects JokerManager pipeline ordering (last applied = highest priority preserved).
+  - Panels toggle as specified; GamePanel shows pre-existing gameplay UI elements.
+  - Build succeeds in both Assembly-CSharp and Assembly-CSharp-Editor.
+- Known omissions (intended next)
+  - Back button from Pipeline -> Offer (policy: keep or reset picks) not yet implemented.
+  - Draft logs (RPSLog for Offered/Picked/Order) not yet emitted.
+  - ScrollRect for OfferContainer optional; grid works for 10 items; scalable later for 12/14.
+  - No exclusive-pair rule UI; relies on library data/weights.
+- Integration guidance
+  - Assign DraftFlowController refs: GameManager, JokerManager, JokerLibrary; panels and prefabs; pickCount as desired.
+  - Keep DEBUGManager in scene only if needed for editor-side testing; not required at runtime.
+
+--- legacy content below (kept for history) ---
+
 Overhand Notes (2025-09-20 ? Sync with Engine EndRound backend)
 - Status
   - Phase A/B engine and assets: implemented and QA complete (see below history).
@@ -8,7 +45,7 @@ Overhand Notes (2025-09-20 ? Sync with Engine EndRound backend)
     - Added RoundResult { totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed }.
     - Added event Action<RoundResult> OnRoundEnded; UI/storage can subscribe.
     - Input locked at round end; Restart button remains operable; resultText gets a simple "(Round finished)" line.
-    - Logs: RPSLog.Event("Round", "Ended", …) emitted once per round.
+    - Logs: RPSLog.Event("Round", "Ended", ?) emitted once per round.
   - No changes to JokerManager pipeline in this pass (RoundStart, TurnSettlement only).
 - Immediate guidance to continue work
   1) If UI work starts later: subscribe to GameManager.OnRoundEnded and render a summary panel; leave buttons disabled except Restart.
@@ -66,7 +103,7 @@ Overhand Notes (Handover Summary - 2025-09-20)
 
 --- legacy content below (kept for history) ---
 
-Joker Implementation Tasks (from '# 조커 아이디어.txt')
+Joker Implementation Tasks (from '# ????.txt')
 
 Scope
 - No code implementation in this pass. Define tags, gaps, and a safe rollout plan per idea.
@@ -92,7 +129,7 @@ Handover Notes (for implementation start)
   - JokerManager: add OnRoundPrepare(GameManager), OnTurnStart(GameContext); apply RoundEnd totalMultiplier once; log with RPSLog
   - GameManager: call RoundPrepare after hand generation; helpers for hand add/turns delta; GetRerollsUsed()
 - Ordering/determinism rules
-  - Phase order: Prepare → Start → Judge → Settlement → End
+  - Phase order: Prepare -> Start -> Judge -> Settlement -> End
   - Multipliers: apply in pipeline order; avoid duplicate application (document single-apply)
   - RevealNextAICard: prefer front-only; require AIDrawFromFront or emit info-only message
   - RNG determinism: fixed seed/order; use toggle order as priority (last toggled = highest)

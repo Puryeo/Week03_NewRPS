@@ -154,5 +154,12 @@ namespace NewRPS.Debugging
             }
             ApplySelection();
         }
+
+        public void ClearDraft()
+        {
+            offered.Clear();
+            picked.Clear();
+            Debug.Log("[Draft] Cleared offered and picked lists.");
+        }
     }
 }

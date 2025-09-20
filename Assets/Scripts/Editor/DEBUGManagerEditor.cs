@@ -152,6 +152,10 @@ public class DEBUGManagerEditor : Editor
                         {
                             mgr.GenerateOffer();
                         }
+                        if (GUILayout.Button("Clear Draft"))
+                        {
+                            mgr.ClearDraft();
+                        }
                         if (GUILayout.Button("Commit Picked ¡æ Enabled"))
                         {
                             mgr.CommitPickedAsEnabled();
