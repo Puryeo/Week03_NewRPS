@@ -10,14 +10,14 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9f86557d0063a95409e1a3b5e4036868, type: 3}
-  m_Name: Glass_Scissors
+  m_Name: Slave_Contract
   m_EditorClassIdentifier: 
-  jokerName: Glass_Scissors
-  description: Win with Scissors +10; Loss with Scissors -15.
+  jokerName: Slave_Contract
+  description: 'RoundPrepare: Player +3 random cards, AI +1 random card.'
   archetypes: 4
   tags:
   - category: 0
-    timingType: 2
+    timingType: 3
     conditionType: 0
     effectType: 0
     outcomeParam: 0
@@ -31,24 +31,24 @@ MonoBehaviour:
   - category: 2
     timingType: 0
     conditionType: 0
-    effectType: 1
+    effectType: 11
     outcomeParam: 0
-    choiceParam: 2
-    intValue: 10
+    choiceParam: 0
+    intValue: 3
     stringValue: 
-    filterByOutcome: 1
-    filterByChoice: 1
+    filterByOutcome: 0
+    filterByChoice: 0
     useBetweenRange: 0
     extra: 
   - category: 2
     timingType: 0
     conditionType: 0
-    effectType: 1
-    outcomeParam: 2
-    choiceParam: 2
-    intValue: -15
+    effectType: 12
+    outcomeParam: 0
+    choiceParam: 0
+    intValue: 1
     stringValue: 
-    filterByOutcome: 1
-    filterByChoice: 1
+    filterByOutcome: 0
+    filterByChoice: 0
     useBetweenRange: 0
     extra: 

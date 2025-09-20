@@ -26,6 +26,8 @@ MonoBehaviour:
     stringValue: 
     filterByOutcome: 0
     filterByChoice: 0
+    useBetweenRange: 0
+    extra: 
   - category: 1
     timingType: 0
     conditionType: 3
@@ -36,6 +38,8 @@ MonoBehaviour:
     stringValue: 
     filterByOutcome: 0
     filterByChoice: 0
+    useBetweenRange: 0
+    extra: 
   - category: 1
     timingType: 0
     conditionType: 5
@@ -46,6 +50,8 @@ MonoBehaviour:
     stringValue: 
     filterByOutcome: 0
     filterByChoice: 0
+    useBetweenRange: 0
+    extra: 
   - category: 2
     timingType: 0
     conditionType: 0
@@ -56,3 +62,5 @@ MonoBehaviour:
     stringValue: 
     filterByOutcome: 0
     filterByChoice: 0
+    useBetweenRange: 0
+    extra: 

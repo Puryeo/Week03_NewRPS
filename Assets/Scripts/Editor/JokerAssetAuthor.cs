@@ -4,8 +4,8 @@ using UnityEngine;
 using Jokers;
 using System.Collections.Generic;
 
-// Editor utility to author Phase A, B, and C JokerData assets per Joker-Task.txt
-// Menu: Tools/NewRPS/Author Phase A/B/C Jokers
+// Editor utility to author Phase A, B, C, and D JokerData assets per Joker-Task.txt
+// Menu: Tools/NewRPS/Author Phase A/B/C/D Jokers
 namespace NewRPS.Editor
 {
     public static class JokerAssetAuthor
@@ -13,6 +13,7 @@ namespace NewRPS.Editor
         private const string RootFolder = "Assets/Jokers/PhaseA";
         private const string RootFolderB = "Assets/Jokers/PhaseB";
         private const string RootFolderC = "Assets/Jokers/PhaseC";
+        private const string RootFolderD = "Assets/Jokers/PhaseD";
 
         [MenuItem("Tools/NewRPS/Author Phase A Jokers/Create All")]
         public static void CreateAll()
@@ -162,6 +163,7 @@ namespace NewRPS.Editor
             Create_Twin_Blades();
             Create_Final_Royalty();
             Create_Iron_Heart();
+            Create_Confidential_Document();
             AssetDatabase.SaveAssets();
             Debug.Log("[JokerAssetAuthor] Phase B assets created/updated in Assets/Jokers/PhaseB");
         }
@@ -232,6 +234,22 @@ namespace NewRPS.Editor
             SaveOrUpdate(data, $"{RootFolderB}/Iron_Heart.asset");
         }
 
+        [MenuItem("Tools/NewRPS/Author Phase B Jokers/Confidential_Document")] public static void Create_Confidential_Document()
+        {
+            var data = ScriptableObject.CreateInstance<JokerData>();
+            data.jokerName = "Confidential_Document";
+            data.description = "If Win with Paper ¡æ reveal opponent next card.";
+            data.archetypes = JokerArchetype.Utility;
+            data.tags = new List<JokerTag>
+            {
+                Timing(JokerTimingType.TurnSettlement),
+                Condition_OutcomeIs(Outcome.Win),
+                Condition_PlayerChoiceIs(Choice.Paper),
+                Effect_RevealNextAICard(),
+            };
+            SaveOrUpdate(data, $"{RootFolderB}/Confidential_Document.asset");
+        }
+
         // Phase C menus
         [MenuItem("Tools/NewRPS/Author Phase C Jokers/Create All")]
         public static void CreateAll_PhaseC()
@@ -240,6 +258,9 @@ namespace NewRPS.Editor
             Create_Tailors_Pride();
             Create_Mass_Production_Scissors();
             Create_Ore_Vein();
+            Create_Resource_Explosion();
+            Create_Inflation();
+            Create_Slave_Contract();
             AssetDatabase.SaveAssets();
             Debug.Log("[JokerAssetAuthor] Phase C assets created/updated in Assets/Jokers/PhaseC");
         }
@@ -289,6 +310,108 @@ namespace NewRPS.Editor
             SaveOrUpdate(data, $"{RootFolderC}/Ore_Vein.asset");
         }
 
+        [MenuItem("Tools/NewRPS/Author Phase C Jokers/Resource_Explosion")] public static void Create_Resource_Explosion()
+        {
+            var data = ScriptableObject.CreateInstance<JokerData>();
+            data.jokerName = "Resource_Explosion";
+            data.description = "RoundPrepare: Player +2 Rock, AI +1 random card.";
+            data.archetypes = JokerArchetype.Catalyst;
+            data.tags = new List<JokerTag>
+            {
+                Timing(JokerTimingType.RoundPrepare),
+                Effect_AddCardsToPlayerHand(Choice.Rock, 2),
+                Effect_AddRandomCardsToAIHand(1),
+            };
+            SaveOrUpdate(data, $"{RootFolderC}/Resource_Explosion.asset");
+        }
+
+        [MenuItem("Tools/NewRPS/Author Phase C Jokers/Inflation")] public static void Create_Inflation()
+        {
+            var data = ScriptableObject.CreateInstance<JokerData>();
+            data.jokerName = "Inflation";
+            data.description = "RoundPrepare: Player +2 Paper, AI +2 Rock.";
+            data.archetypes = JokerArchetype.Catalyst;
+            data.tags = new List<JokerTag>
+            {
+                Timing(JokerTimingType.RoundPrepare),
+                Effect_AddCardsToPlayerHand(Choice.Paper, 2),
+                Effect_AddCardsToAIHand(Choice.Rock, 2),
+            };
+            SaveOrUpdate(data, $"{RootFolderC}/Inflation.asset");
+        }
+
+        [MenuItem("Tools/NewRPS/Author Phase C Jokers/Slave_Contract")] public static void Create_Slave_Contract()
+        {
+            var data = ScriptableObject.CreateInstance<JokerData>();
+            data.jokerName = "Slave_Contract";
+            data.description = "RoundPrepare: Player +3 random cards, AI +1 random card.";
+            data.archetypes = JokerArchetype.Catalyst;
+            data.tags = new List<JokerTag>
+            {
+                Timing(JokerTimingType.RoundPrepare),
+                Effect_AddRandomCardsToPlayerHand(3),
+                Effect_AddRandomCardsToAIHand(1),
+            };
+            SaveOrUpdate(data, $"{RootFolderC}/Slave_Contract.asset");
+        }
+
+        // Phase D menus
+        [MenuItem("Tools/NewRPS/Author Phase D Jokers/Create All")]
+        public static void CreateAll_PhaseD()
+        {
+            EnsureFolderD();
+            Create_Great_Earthquake();
+            Create_Blank_Check();
+            Create_Perfect_Tailoring();
+            AssetDatabase.SaveAssets();
+            Debug.Log("[JokerAssetAuthor] Phase D assets created/updated in Assets/Jokers/PhaseD");
+        }
+
+        [MenuItem("Tools/NewRPS/Author Phase D Jokers/Great_Earthquake")] public static void Create_Great_Earthquake()
+        {
+            var data = ScriptableObject.CreateInstance<JokerData>();
+            data.jokerName = "Great_Earthquake";
+            data.description = "If played Rock on turn 5, final total x-1.";
+            data.archetypes = JokerArchetype.Catalyst;
+            data.tags = new List<JokerTag>
+            {
+                new JokerTag { category = JokerTagCategory.Timing, timingType = JokerTimingType.RoundEnd },
+                new JokerTag { category = JokerTagCategory.Condition, conditionType = JokerConditionType.ChoiceUsedOnTurnIndex, choiceParam = Choice.Rock, intValue = 5 },
+                new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.FinalTotalMultiplier, intValue = -1 },
+            };
+            SaveOrUpdate(data, $"{RootFolderD}/Great_Earthquake.asset");
+        }
+
+        [MenuItem("Tools/NewRPS/Author Phase D Jokers/Blank_Check")] public static void Create_Blank_Check()
+        {
+            var data = ScriptableObject.CreateInstance<JokerData>();
+            data.jokerName = "Blank_Check";
+            data.description = "If won with Paper at least 3 times, final total x2.";
+            data.archetypes = JokerArchetype.Payoff;
+            data.tags = new List<JokerTag>
+            {
+                new JokerTag { category = JokerTagCategory.Timing, timingType = JokerTimingType.RoundEnd },
+                new JokerTag { category = JokerTagCategory.Condition, conditionType = JokerConditionType.WinWithChoiceAtLeastCount, choiceParam = Choice.Paper, intValue = 3 },
+                new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.FinalTotalMultiplier, intValue = 2 },
+            };
+            SaveOrUpdate(data, $"{RootFolderD}/Blank_Check.asset");
+        }
+
+        [MenuItem("Tools/NewRPS/Author Phase D Jokers/Perfect_Tailoring")] public static void Create_Perfect_Tailoring()
+        {
+            var data = ScriptableObject.CreateInstance<JokerData>();
+            data.jokerName = "Perfect_Tailoring";
+            data.description = "If all wins were with Scissors, final total x2.";
+            data.archetypes = JokerArchetype.Payoff;
+            data.tags = new List<JokerTag>
+            {
+                new JokerTag { category = JokerTagCategory.Timing, timingType = JokerTimingType.RoundEnd },
+                new JokerTag { category = JokerTagCategory.Condition, conditionType = JokerConditionType.WinsOnlyWithChoice, choiceParam = Choice.Scissors },
+                new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.FinalTotalMultiplier, intValue = 2 },
+            };
+            SaveOrUpdate(data, $"{RootFolderD}/Perfect_Tailoring.asset");
+        }
+
         // Helpers: ensure folders
         private static void EnsureFolder()
         {
@@ -304,6 +427,11 @@ namespace NewRPS.Editor
         {
             if (!AssetDatabase.IsValidFolder("Assets/Jokers")) AssetDatabase.CreateFolder("Assets", "Jokers");
             if (!AssetDatabase.IsValidFolder(RootFolderC)) AssetDatabase.CreateFolder("Assets/Jokers", "PhaseC");
+        }
+        private static void EnsureFolderD()
+        {
+            if (!AssetDatabase.IsValidFolder("Assets/Jokers")) AssetDatabase.CreateFolder("Assets", "Jokers");
+            if (!AssetDatabase.IsValidFolder(RootFolderD)) AssetDatabase.CreateFolder("Assets/Jokers", "PhaseD");
         }
 
         private static void SaveOrUpdate(JokerData data, string path)
@@ -341,12 +469,17 @@ namespace NewRPS.Editor
         private static JokerTag Effect_AddCardsToPlayerHand(Choice c, int n) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.AddCardsToPlayerHand, choiceParam = c, intValue = n };
         private static JokerTag Effect_AddCardsToAIHand(Choice c, int n) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.AddCardsToAIHand, choiceParam = c, intValue = n };
         private static JokerTag Effect_AddScorePerPlayerHandCount(Choice c, int per) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.AddScorePerPlayerHandCount, choiceParam = c, intValue = per };
+        private static JokerTag Effect_AddRandomCardsToPlayerHand(int n) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.AddRandomCardsToPlayerHand, intValue = n };
+        private static JokerTag Effect_AddRandomCardsToAIHand(int n) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.AddRandomCardsToAIHand, intValue = n };
 
         private static JokerTag Effect_AddScoreDelta(int v) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.AddScoreDelta, intValue = v };
         private static JokerTag Effect_AddScoreDelta_Filtered(int v, Outcome o, Choice c) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.AddScoreDelta, intValue = v, filterByOutcome = true, outcomeParam = o, filterByChoice = true, choiceParam = c };
         private static JokerTag Effect_FinalScoreMultiplier(int mul) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.FinalScoreMultiplier, intValue = mul };
         private static JokerTag Effect_ReplaceAIRandomCardsToChoice(Choice to, int count) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.ReplaceAIRandomCardsToChoice, choiceParam = to, intValue = count };
         private static JokerTag Effect_RevealNextAICard() => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.RevealNextAICard };
+
+        // Phase D builder
+        private static JokerTag Effect_FinalTotalMultiplier_RoundEnd(int mul) => new JokerTag { category = JokerTagCategory.Effect, effectType = JokerEffectType.FinalTotalMultiplier, intValue = mul };
     }
 }
 #endif

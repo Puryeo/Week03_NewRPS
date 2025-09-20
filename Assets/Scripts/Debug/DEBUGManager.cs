@@ -14,6 +14,18 @@ namespace NewRPS.Debugging
         [Header("Selection (apply order = list order)")]
         public List<JokerData> enabledJokers = new List<JokerData>();
 
+        [Header("Draft (Offer/Pick)")]
+        public List<JokerData> offered = new List<JokerData>();
+        public List<JokerData> picked = new List<JokerData>();
+        public int draftSeed = 12345;
+        public int offerCount = 10;
+        public int pickCount = 5;
+        public int minAnchor = 2;
+        public int minPayoff = 2;
+        public int minUtility = 1;
+        public int maxCatalyst = 3;
+        public bool allowDuplicate = false;
+
         [Header("Options")]
         public bool autoApplyOnPlay = true;
 
@@ -24,8 +36,6 @@ namespace NewRPS.Debugging
         public bool dbgShuffle = true;
         public bool dbgApplyOnStart = false; // Start()에서 자동 적용(씬 최초 시작 전용)
 
-        private bool _appliedEarly = false; // Awake에서 조커를 선적용했는지 여부
-
         private void Awake()
         {
             // 씬 로드시 실행 순서: 모든 Awake → 모든 Start
@@ -33,7 +43,6 @@ namespace NewRPS.Debugging
             if (autoApplyOnPlay)
             {
                 ApplySelectionInternal(skipNotify: true);
-                _appliedEarly = true;
             }
             // 플레이어 손패 디버그 오버라이드는 RoundPrepare 전, 손패 생성 전에 반영되어야 한다.
             if (dbgApplyOnStart && gameManager != null)
@@ -108,6 +117,42 @@ namespace NewRPS.Debugging
         {
             if (gameManager == null) { Debug.LogWarning("[DEBUGManager] GameManager not assigned"); return; }
             gameManager.DebugTrySetPlayerHandCounts(dbgPlayerRocks, dbgPlayerPapers, dbgPlayerScissors, dbgShuffle, force);
+        }
+
+        // Draft helpers
+        public void GenerateOffer()
+        {
+            offered.Clear(); picked.Clear();
+            if (library == null)
+            {
+                Debug.LogWarning("[DEBUGManager] JokerLibrary not assigned");
+                return;
+            }
+            var cfg = new JokerLibrary.OfferConfig
+            {
+                offerCount = offerCount,
+                pickCount = pickCount,
+                minAnchor = minAnchor,
+                minPayoff = minPayoff,
+                minUtility = minUtility,
+                maxCatalyst = maxCatalyst,
+                allowDuplicate = allowDuplicate,
+                seed = draftSeed
+            };
+            var list = library.PickOffer(cfg);
+            if (list != null) offered.AddRange(list);
+            Debug.Log($"[Draft] Offered {offered.Count} (seed={draftSeed})");
+        }
+
+        public void CommitPickedAsEnabled()
+        {
+            enabledJokers.Clear();
+            for (int i = 0; i < picked.Count; i++)
+            {
+                var d = picked[i];
+                if (d != null && !enabledJokers.Contains(d)) enabledJokers.Add(d);
+            }
+            ApplySelection();
         }
     }
 }

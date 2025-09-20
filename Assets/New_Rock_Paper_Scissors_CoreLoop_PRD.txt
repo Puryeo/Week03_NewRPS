@@ -147,12 +147,13 @@ A. Summary of Tasks Completed (Updated)
 - Scout information fix: shows first card and the actual last-play turn card, aligned with AI drawing from front when active.
 - Additive scoring pipeline: Jokers modify the base rule (Win +5 / Draw +3 / Loss +0) by adding deltas, enabling safe synergies.
 - Phase B additions: new tag types and plumbing (see Section C and E below).
+- New (2025-09-20): EndRound backend/event + RoundResult DTO; RPSLog Round summary.
 
 B. Current Rule Set (overrides/extends earlier sections)
 - Default: Player/AI each receive 6 cards; turnsToPlay defaults to 5. Both values are configurable in Inspector.
 - Base scoring remains: Win +5, Draw +3, Loss +0. Joker effects are applied additively to this base.
 - AI draw policy: if a Joker with ForceAIDrawFromFront is active, AI draws from the front; otherwise random.
-- Turn count independence: turnsToPlay is independent of hand sizes. If either side runs out of cards before all turns are played, the round ends early.
+- Turn count independence: turnsToPlay is independent of hand sizes. If either side runs out of cards before all turns are played, the round ends early (EndRound event fires).
 
 C. Modular Joker System (Tag-based, Data-Driven Only)
 - Data model
@@ -185,7 +186,7 @@ F. Behavior Notes from QA
 
 G. Next Steps (not yet implemented)
 - RoundPrepare and TurnStart timings; AddCardsToPlayerHand, AddCardsToAIHand, ModifyTurnsToPlayDelta; PlayerHasAtLeastCountInHand.
-- RoundEnd timing and FinalTotalMultiplier; flag IgnoreBossPenalty.
+- RoundEnd timing and FinalTotalMultiplier; flags like IgnoreBossPenalty; ensure single-apply order at round end. (EndRound event exists; Joker timing pending.)
 
 H. Authoring Guidance
 - Multiple specific turns: add multiple TurnIndexIs tags (runtime OR).
@@ -197,7 +198,7 @@ I. Changelog (engine deltas during Phase B)
 - Added enums and interpreter cases: TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RerollUsedEquals, RevealNextAICard.
 - GameContext: added rerollsUsed.
 - JokerManager: OR semantics for multiple TurnIndexIs; settlement multipliers apply to total; Paper_Dominance filtered mutation.
-- GameManager: ShowInfo queues and appends; GetPlayerRerollsUsed; ReplaceAIPaperOrScissorsToRock helper.
+- GameManager: ShowInfo queues and appends; GetPlayerRerollsUsed; ReplaceAIPaperOrScissorsToRock helper; EndRound backend + RoundResult + OnRoundEnded event.
 
 J. Test Checklist (Phase B)
 - RevealNextAICard appends to ResultText as well as console.
@@ -207,3 +208,566 @@ J. Test Checklist (Phase B)
 K. Notes
 - Keep text files ASCII only to avoid save issues.
 - Use RPSLog for round/turn/joker events and future extensions.
+
+Overhand Notes (2025-09-20 ? Engine Update: EndRound backend)
+- Scope: This note documents the latest engine changes without removing any historical content below. It supersedes earlier statements where conflicting.
+- Summary
+  - Implemented EndRound backend in GameManager (no new UI yet): single-call guarded end-of-round finalize.
+  - Introduced RoundResult DTO (totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed).
+  - Added public event OnRoundEnded(RoundResult) on GameManager for UI/storage systems to subscribe to.
+  - Ensured EndRound is invoked on both normal completion (turns exceeded) and early finish (AI out of cards).
+  - Input lock and round state are finalized at EndRound; Restart button remains enabled.
+  - Logging: RPSLog.Event("Round", "Ended", ¡¦) emits a round summary line.
+- Not in this update
+  - JokerManager RoundEnd timing and RoundEnd multipliers are not implemented yet (Phase D). Existing TurnSettlement pipeline remains unchanged.
+- Integration guidance
+  - UI layer: subscribe to GameManager.OnRoundEnded to display final summary or persist scores. Until UI is authored, resultText gets a simple "(Round finished)" line.
+  - Determinism/Ordering: EndRound is guarded by _roundEnded flag and called exactly once per round.
+  - Restart: restartReloadScene option preserved; non-reload path calls StartRound() which resets the guard and state.
+
+API Updates (Delta)
+- GameManager
+  - event Action<RoundResult> OnRoundEnded
+  - private bool _roundEnded guard; reset in StartRound()
+  - private void EndRound():
+    - Locks input, sets roundActive=false
+    - Builds RoundResult { totalScore, W/D/L, turnsPlanned, turnsPlayed, rerollsUsed }
+    - Logs RPSLog Round.Ended
+    - Invokes OnRoundEnded once (guarded try/catch)
+  - Calls EndRound() when:
+    - currentTurn > MaxTurns (normal end)
+    - aiHand.Count == 0 after a player pick (early end)
+- Data
+  - RoundResult fields: totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed
+
+Test Checklist Addendum
+- End-of-round event
+  - Normal end at configured turns: OnRoundEnded fires once, turnsPlayed equals MaxTurns.
+  - Early AI depletion: OnRoundEnded fires once, turnsPlayed reflects actual played turns.
+  - Reroll usage is reported correctly in RoundResult.rerollsUsed.
+  - Input is locked post-end; Restart is available.
+- Regression
+  - Reroll flow before Turn 1 unchanged, reapply mechanics intact.
+  - Per-turn settlement logs and totals unchanged.
+
+Next Steps (Phase D ? planned)
+- Add Joker timing RoundEnd and effect FinalTotalMultiplier.
+- Provide JokerManager.OnRoundEnd(GameManager/RoundResult) pipeline, executed once after the final turn.
+- Define order-of-operations vs any end-of-round flags (e.g., IgnoreBossPenalty placeholder).
+- Extend PRD addendum with RoundEnd timing test cases when implemented.
+
+<New_Rock_Paper_Scissors> Core Loop Prototype PRD (Product Requirements Document)
+
+Note: The Addendum section supersedes any conflicting statements earlier in this document.
+
+1. Product Goal
+The objective of this prototype is to evaluate the fun of the most basic game loop of 
+
+<New_Rock_Paper_Scissors>: the process of finding the optimal move over 5 turns while knowing the composition of the opponent's hand. This will serve to verify if the core mechanics are sufficiently engaging and robust before adding complex systems like Jokers.
+
+2. Feature Specifications
+2.1. Game Round Flow
+
+Round Start: When the game begins, the system will generate the AI's starting hand (default 6 cards; configurable via Inspector) and initialize all variables (score, turn).
+
+
+Information Display: The types and quantities of the cards held by the AI will be displayed to the player via text.
+
+
+Turn Progression (default 5 turns; configurable):
+
+The player selects one of three buttons: 'Rock', 'Paper', or 'Scissors'.
+
+The AI selects and plays one card from its remaining hand (front when draw-policy active, otherwise random).
+
+The result (Win/Draw/Loss) is determined and the score is recorded.
+
+The information about the AI's remaining hand composition is updated.
+
+
+Round End: After the configured last turn concludes, the final score is displayed and a 'Restart' button is activated.
+
+2.2.
+Detailed Core Features
+
+
+
+AI Hand Generation: At the start of a round, cards will be selected from 'Rock', 'Paper', and 'Scissors' and stored in a list (default 6; configurable).
+
+Player Input: The player submits their choice via the 'Rock', 'Paper', or 'Scissors' buttons. The game will wait for this input before proceeding.
+
+
+Result Determination: Follows standard Rock-Paper-Scissors rules.
+
+
+Scoring System:
+
+Win: 5 points
+
+Draw: 3 points
+
+Loss: 0 points
+
+
+UI Feedback: The following information must be updated on-screen immediately each turn:
+
+The AI's remaining hand composition
+
+The current turn number (e.g., "3/5")
+
+The current cumulative score
+
+The result of the turn (e.g., "Win!")
+
+
+3. Technical Specifications
+3.1.
+Development Environment
+
+
+
+Engine: Unity 6000.0.56f
+
+
+Render Pipeline: Universal Render Pipeline (URP), configured for a 2D environment
+
+3.2.
+Core Classes and Data Structures
+
+
+GameManager.cs
+
+
+Description: The core controller class that manages all game states and flow.
+
+
+Key Variables:
+
+C#
+
+// --- Game State Variables ---
+private List<Choice> aiHand; // A list to store the AI's remaining cards
+private int currentTurn; // The current turn (1-5) [cite: 15]
+private int currentScore; // The current score [cite: 15]
+
+// --- UI Reference Variables ---
+public TextMeshProUGUI aiHandText; // Text for AI hand info [cite: 16]
+public TextMeshProUGUI turnText; // Text for the current turn [cite: 16]
+public TextMeshProUGUI scoreText; // Text for the current score [cite: 16]
+public TextMeshProUGUI resultText; // Text for the turn result [cite: 17]
+public GameObject restartButton; // The restart button game object [cite: 17]
+Key Functions:
+
+C#
+
+void StartRound(); // Initializes and starts the game
+void PlayerMakesChoice(Choice playerChoice); // The main logic called upon player selection [cite: 18]
+void UpdateUI(); // Updates all UI text elements to reflect the current state [cite: 18]
+void EndRound(); // Called after 5 turns to end the round
+Choice (enum)
+
+
+Description: An enum to clearly manage the Rock, Paper, and Scissors choices.
+
+
+Structure:
+
+C#
+
+public enum Choice { Rock, Paper, Scissors }
+
+Note: For tag authoring only, a sentinel value Choice.None exists in code. Gameplay UI continues to expose only Rock/Paper/Scissors.
+
+4. Features Out of Scope
+To focus on the prototype's objectives, the following features are explicitly excluded from the scope of work:
+
+// Joker System - superseded by Addendum (see below)
+Consumables System
+
+Stage, Boss, and Score Hurdle Systems
+
+All sound, animations, and visual effects (VFX)
+
+Title screen and any other UI screens
+
+
+
+====================
+Addendum / Handover (Prototype Iteration with Modular Jokers)
+====================
+
+A. Summary of Tasks Completed (Updated)
+- Core loop refactor to 6-card hands (default) and 5 turns (configurable via Inspector).
+- Inspector configurables: handSize, turnsToPlay, guaranteedRocks/Papers/Scissors, playerRerollMax.
+- Reroll: allowed only before Turn 1, regenerates player hand with guaranteed counts, then shuffles.
+- DEBUG HUD: runtime toggles for Jokers, shows Current (highest priority) and full Pipeline via CurrentText/PipelineText.
+- Modular Joker architecture implemented (Tag-based JokerData + JokerManager). Legacy IJoker/enum pipeline removed.
+- Scout information fix: shows first card and the actual last-play turn card, aligned with AI drawing from front when active.
+- Additive scoring pipeline: Jokers modify the base rule (Win +5 / Draw +3 / Loss +0) by adding deltas, enabling safe synergies.
+- Phase B additions: new tag types and plumbing (see Section C and E below).
+- New (2025-09-20): EndRound backend/event + RoundResult DTO; RPSLog Round summary.
+
+B. Current Rule Set (overrides/extends earlier sections)
+- Default: Player/AI each receive 6 cards; turnsToPlay defaults to 5. Both values are configurable in Inspector.
+- Base scoring remains: Win +5, Draw +3, Loss +0. Joker effects are applied additively to this base.
+- AI draw policy: if a Joker with ForceAIDrawFromFront is active, AI draws from the front; otherwise random.
+- Turn count independence: turnsToPlay is independent of hand sizes. If either side runs out of cards before all turns are played, the round ends early (EndRound event fires).
+
+C. Modular Joker System (Tag-based, Data-Driven Only)
+- Data model
+  - JokerData (ScriptableObject): jokerName, description, tags (List<JokerTag>).
+  - JokerTag: category (Timing/Condition/Effect), type, parameters (Outcome/Choice/int/string), optional filters at effect level.
+  - Default values: Choice.None/Outcome.None/JokerTimingType.None are available for unused fields.
+- Manager (JokerManager)
+  - Tag interpreter and effect executor.
+  - Multiple active Jokers with ordered priority (last toggled is highest).
+  - Public API: SetJoker, ToggleJoker, GetCurrentJokerName, GetPipelineDescription, AIDrawFromFront.
+  - Timings executed: OnRoundStart(GameManager), ExecuteTurnSettlementEffects(GameContext).
+  - RoundStart may set AIDrawFromFront=true for the round if ForceAIDrawFromFront is present.
+
+D. Implemented Tags (Phase A and B)
+- Timing: RoundStart, TurnSettlement
+- Conditions: OutcomeIs, PlayerChoiceIs, PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn, PlayerHasMoreOfChoiceThanAI, TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RerollUsedEquals
+- Effects: AddScoreDelta, FinalScoreMultiplier, ForceAIDrawFromFront, ShowInfo, ReplaceAIRandomCardsToChoice, RevealNextAICard
+- GameContext: playerChoice, outcome, baseScore, currentTotal, scoreDelta, turnIndex, turnsPlanned, isLastTurn, playerHistory, outcomeHistory, rerollsUsed
+
+E. Implemented Jokers (assets)
+- Phase A: Scissors_Collector, Blade_of_Vengeance, Glass_Scissors, Sturdy_Barricade, Landslide, Force_Of_Nature, Devils_Contract, Paper_Dominance.
+- Phase B: Geological_Survey, Twin_Blades, Final_Royalty (TurnIndex 4 or 5), Iron_Heart (+30).
+
+F. Behavior Notes from QA
+- Force_Of_Nature: multiplier applies on the turn when the condition is met (delta recalculated against current total).
+- Paper_Dominance: converts exactly 2 AI cards chosen from Paper or Scissors to Rock; re-applies on Reroll.
+- Geological_Survey: Loss with Rock reveals next AI front card; message appended under ResultText for that turn.
+- Final_Royalty: valid on turn 4 or 5 (two TurnIndexIs tags) and requires Win with Paper.
+- Iron_Heart: +30 on last turn if no reroll used.
+
+G. Next Steps (not yet implemented)
+- RoundPrepare and TurnStart timings; AddCardsToPlayerHand, AddCardsToAIHand, ModifyTurnsToPlayDelta; PlayerHasAtLeastCountInHand.
+- RoundEnd timing and FinalTotalMultiplier; flags like IgnoreBossPenalty; ensure single-apply order at round end. (EndRound event exists; Joker timing pending.)
+
+H. Authoring Guidance
+- Multiple specific turns: add multiple TurnIndexIs tags (runtime OR).
+- Reveal info: use RevealNextAICard; UI appends message under the result line via ShowInfo queue.
+- AI hand mutation to Rock: use ReplaceAIRandomCardsToChoice with choiceParam Rock; engine limits candidates to Paper or Scissors.
+- Per-turn multipliers: use FinalScoreMultiplier.
+
+I. Changelog (engine deltas during Phase B)
+- Added enums and interpreter cases: TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RerollUsedEquals, RevealNextAICard.
+- GameContext: added rerollsUsed.
+- JokerManager: OR semantics for multiple TurnIndexIs; settlement multipliers apply to total; Paper_Dominance filtered mutation.
+- GameManager: ShowInfo queues and appends; GetPlayerRerollsUsed; ReplaceAIPaperOrScissorsToRock helper; EndRound backend + RoundResult + OnRoundEnded event.
+
+J. Test Checklist (Phase B)
+- RevealNextAICard appends to ResultText as well as console.
+- FinalScoreMultiplier applies once to turn-end total for the triggering turn.
+- TurnIndexIs OR semantics verified with Final_Royalty (turn 4 or 5).
+
+K. Notes
+- Keep text files ASCII only to avoid save issues.
+- Use RPSLog for round/turn/joker events and future extensions.
+
+Overhand Notes (2025-09-20 ? Engine Update: EndRound backend)
+- Scope: This note documents the latest engine changes without removing any historical content below. It supersedes earlier statements where conflicting.
+- Summary
+  - Implemented EndRound backend in GameManager (no new UI yet): single-call guarded end-of-round finalize.
+  - Introduced RoundResult DTO (totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed).
+  - Added public event OnRoundEnded(RoundResult) on GameManager for UI/storage systems to subscribe to.
+  - Ensured EndRound is invoked on both normal completion (turns exceeded) and early finish (AI out of cards).
+  - Input lock and round state are finalized at EndRound; Restart button remains enabled.
+  - Logging: RPSLog.Event("Round", "Ended", ¡¦) emits a round summary line.
+- Not in this update
+  - JokerManager RoundEnd timing and RoundEnd multipliers are not implemented yet (Phase D). Existing TurnSettlement pipeline remains unchanged.
+- Integration guidance
+  - UI layer: subscribe to GameManager.OnRoundEnded to display final summary or persist scores. Until UI is authored, resultText gets a simple "(Round finished)" line.
+  - Determinism/Ordering: EndRound is guarded by _roundEnded flag and called exactly once per round.
+  - Restart: restartReloadScene option preserved; non-reload path calls StartRound() which resets the guard and state.
+
+API Updates (Delta)
+- GameManager
+  - event Action<RoundResult> OnRoundEnded
+  - private bool _roundEnded guard; reset in StartRound()
+  - private void EndRound():
+    - Locks input, sets roundActive=false
+    - Builds RoundResult { totalScore, W/D/L, turnsPlanned, turnsPlayed, rerollsUsed }
+    - Logs RPSLog Round.Ended
+    - Invokes OnRoundEnded once (guarded try/catch)
+  - Calls EndRound() when:
+    - currentTurn > MaxTurns (normal end)
+    - aiHand.Count == 0 after a player pick (early end)
+- Data
+  - RoundResult fields: totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed
+
+Test Checklist Addendum
+- End-of-round event
+  - Normal end at configured turns: OnRoundEnded fires once, turnsPlayed equals MaxTurns.
+  - Early AI depletion: OnRoundEnded fires once, turnsPlayed reflects actual played turns.
+  - Reroll usage is reported correctly in RoundResult.rerollsUsed.
+  - Input is locked post-end; Restart is available.
+- Regression
+  - Reroll flow before Turn 1 unchanged, reapply mechanics intact.
+  - Per-turn settlement logs and totals unchanged.
+
+Next Steps (Phase D ? planned)
+- Add Joker timing RoundEnd and effect FinalTotalMultiplier.
+- Provide JokerManager.OnRoundEnd(GameManager/RoundResult) pipeline, executed once after the final turn.
+- Define order-of-operations vs any end-of-round flags (e.g., IgnoreBossPenalty placeholder).
+- Extend PRD addendum with RoundEnd timing test cases when implemented.
+
+<New_Rock_Paper_Scissors> Core Loop Prototype PRD (Product Requirements Document)
+
+Note: The Addendum section supersedes any conflicting statements earlier in this document.
+
+1. Product Goal
+The objective of this prototype is to evaluate the fun of the most basic game loop of 
+
+<New_Rock_Paper_Scissors>: the process of finding the optimal move over 5 turns while knowing the composition of the opponent's hand. This will serve to verify if the core mechanics are sufficiently engaging and robust before adding complex systems like Jokers.
+
+2. Feature Specifications
+2.1. Game Round Flow
+
+Round Start: When the game begins, the system will generate the AI's starting hand (default 6 cards; configurable via Inspector) and initialize all variables (score, turn).
+
+
+Information Display: The types and quantities of the cards held by the AI will be displayed to the player via text.
+
+
+Turn Progression (default 5 turns; configurable):
+
+The player selects one of three buttons: 'Rock', 'Paper', or 'Scissors'.
+
+The AI selects and plays one card from its remaining hand (front when draw-policy active, otherwise random).
+
+The result (Win/Draw/Loss) is determined and the score is recorded.
+
+The information about the AI's remaining hand composition is updated.
+
+
+Round End: After the configured last turn concludes, the final score is displayed and a 'Restart' button is activated.
+
+2.2.
+Detailed Core Features
+
+
+
+AI Hand Generation: At the start of a round, cards will be selected from 'Rock', 'Paper', and 'Scissors' and stored in a list (default 6; configurable).
+
+Player Input: The player submits their choice via the 'Rock', 'Paper', or 'Scissors' buttons. The game will wait for this input before proceeding.
+
+
+Result Determination: Follows standard Rock-Paper-Scissors rules.
+
+
+Scoring System:
+
+Win: 5 points
+
+Draw: 3 points
+
+Loss: 0 points
+
+
+UI Feedback: The following information must be updated on-screen immediately each turn:
+
+The AI's remaining hand composition
+
+The current turn number (e.g., "3/5")
+
+The current cumulative score
+
+The result of the turn (e.g., "Win!")
+
+
+3. Technical Specifications
+3.1.
+Development Environment
+
+
+
+Engine: Unity 6000.0.56f
+
+
+Render Pipeline: Universal Render Pipeline (URP), configured for a 2D environment
+
+3.2.
+Core Classes and Data Structures
+
+
+GameManager.cs
+
+
+Description: The core controller class that manages all game states and flow.
+
+
+Key Variables:
+
+C#
+
+// --- Game State Variables ---
+private List<Choice> aiHand; // A list to store the AI's remaining cards
+private int currentTurn; // The current turn (1-5) [cite: 15]
+private int currentScore; // The current score [cite: 15]
+
+// --- UI Reference Variables ---
+public TextMeshProUGUI aiHandText; // Text for AI hand info [cite: 16]
+public TextMeshProUGUI turnText; // Text for the current turn [cite: 16]
+public TextMeshProUGUI scoreText; // Text for the current score [cite: 16]
+public TextMeshProUGUI resultText; // Text for the turn result [cite: 17]
+public GameObject restartButton; // The restart button game object [cite: 17]
+Key Functions:
+
+C#
+
+void StartRound(); // Initializes and starts the game
+void PlayerMakesChoice(Choice playerChoice); // The main logic called upon player selection [cite: 18]
+void UpdateUI(); // Updates all UI text elements to reflect the current state [cite: 18]
+void EndRound(); // Called after 5 turns to end the round
+Choice (enum)
+
+
+Description: An enum to clearly manage the Rock, Paper, and Scissors choices.
+
+
+Structure:
+
+C#
+
+public enum Choice { Rock, Paper, Scissors }
+
+Note: For tag authoring only, a sentinel value Choice.None exists in code. Gameplay UI continues to expose only Rock/Paper/Scissors.
+
+4. Features Out of Scope
+To focus on the prototype's objectives, the following features are explicitly excluded from the scope of work:
+
+// Joker System - superseded by Addendum (see below)
+Consumables System
+
+Stage, Boss, and Score Hurdle Systems
+
+All sound, animations, and visual effects (VFX)
+
+Title screen and any other UI screens
+
+
+
+====================
+Addendum / Handover (Prototype Iteration with Modular Jokers)
+====================
+
+A. Summary of Tasks Completed (Updated)
+- Core loop refactor to 6-card hands (default) and 5 turns (configurable via Inspector).
+- Inspector configurables: handSize, turnsToPlay, guaranteedRocks/Papers/Scissors, playerRerollMax.
+- Reroll: allowed only before Turn 1, regenerates player hand with guaranteed counts, then shuffles.
+- DEBUG HUD: runtime toggles for Jokers, shows Current (highest priority) and full Pipeline via CurrentText/PipelineText.
+- Modular Joker architecture implemented (Tag-based JokerData + JokerManager). Legacy IJoker/enum pipeline removed.
+- Scout information fix: shows first card and the actual last-play turn card, aligned with AI drawing from front when active.
+- Additive scoring pipeline: Jokers modify the base rule (Win +5 / Draw +3 / Loss +0) by adding deltas, enabling safe synergies.
+- Phase B additions: new tag types and plumbing (see Section C and E below).
+- New (2025-09-20): EndRound backend/event + RoundResult DTO; RPSLog Round summary.
+
+B. Current Rule Set (overrides/extends earlier sections)
+- Default: Player/AI each receive 6 cards; turnsToPlay defaults to 5. Both values are configurable in Inspector.
+- Base scoring remains: Win +5, Draw +3, Loss +0. Joker effects are applied additively to this base.
+- AI draw policy: if a Joker with ForceAIDrawFromFront is active, AI draws from the front; otherwise random.
+- Turn count independence: turnsToPlay is independent of hand sizes. If either side runs out of cards before all turns are played, the round ends early (EndRound event fires).
+
+C. Modular Joker System (Tag-based, Data-Driven Only)
+- Data model
+  - JokerData (ScriptableObject): jokerName, description, tags (List<JokerTag>).
+  - JokerTag: category (Timing/Condition/Effect), type, parameters (Outcome/Choice/int/string), optional filters at effect level.
+  - Default values: Choice.None/Outcome.None/JokerTimingType.None are available for unused fields.
+- Manager (JokerManager)
+  - Tag interpreter and effect executor.
+  - Multiple active Jokers with ordered priority (last toggled is highest).
+  - Public API: SetJoker, ToggleJoker, GetCurrentJokerName, GetPipelineDescription, AIDrawFromFront.
+  - Timings executed: OnRoundStart(GameManager), ExecuteTurnSettlementEffects(GameContext).
+  - RoundStart may set AIDrawFromFront=true for the round if ForceAIDrawFromFront is present.
+
+D. Implemented Tags (Phase A and B)
+- Timing: RoundStart, TurnSettlement
+- Conditions: OutcomeIs, PlayerChoiceIs, PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn, PlayerHasMoreOfChoiceThanAI, TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RerollUsedEquals
+- Effects: AddScoreDelta, FinalScoreMultiplier, ForceAIDrawFromFront, ShowInfo, ReplaceAIRandomCardsToChoice, RevealNextAICard
+- GameContext: playerChoice, outcome, baseScore, currentTotal, scoreDelta, turnIndex, turnsPlanned, isLastTurn, playerHistory, outcomeHistory, rerollsUsed
+
+E. Implemented Jokers (assets)
+- Phase A: Scissors_Collector, Blade_of_Vengeance, Glass_Scissors, Sturdy_Barricade, Landslide, Force_Of_Nature, Devils_Contract, Paper_Dominance.
+- Phase B: Geological_Survey, Twin_Blades, Final_Royalty (TurnIndex 4 or 5), Iron_Heart (+30).
+
+F. Behavior Notes from QA
+- Force_Of_Nature: multiplier applies on the turn when the condition is met (delta recalculated against current total).
+- Paper_Dominance: converts exactly 2 AI cards chosen from Paper or Scissors to Rock; re-applies on Reroll.
+- Geological_Survey: Loss with Rock reveals next AI front card; message appended under ResultText for that turn.
+- Final_Royalty: valid on turn 4 or 5 (two TurnIndexIs tags) and requires Win with Paper.
+- Iron_Heart: +30 on last turn if no reroll used.
+
+G. Next Steps (not yet implemented)
+- RoundPrepare and TurnStart timings; AddCardsToPlayerHand, AddCardsToAIHand, ModifyTurnsToPlayDelta; PlayerHasAtLeastCountInHand.
+- RoundEnd timing and FinalTotalMultiplier; flags like IgnoreBossPenalty; ensure single-apply order at round end. (EndRound event exists; Joker timing pending.)
+
+H. Authoring Guidance
+- Multiple specific turns: add multiple TurnIndexIs tags (runtime OR).
+- Reveal info: use RevealNextAICard; UI appends message under the result line via ShowInfo queue.
+- AI hand mutation to Rock: use ReplaceAIRandomCardsToChoice with choiceParam Rock; engine limits candidates to Paper or Scissors.
+- Per-turn multipliers: use FinalScoreMultiplier.
+
+I. Changelog (engine deltas during Phase B)
+- Added enums and interpreter cases: TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RerollUsedEquals, RevealNextAICard.
+- GameContext: added rerollsUsed.
+- JokerManager: OR semantics for multiple TurnIndexIs; settlement multipliers apply to total; Paper_Dominance filtered mutation.
+- GameManager: ShowInfo queues and appends; GetPlayerRerollsUsed; ReplaceAIPaperOrScissorsToRock helper; EndRound backend + RoundResult + OnRoundEnded event.
+
+J. Test Checklist (Phase B)
+- RevealNextAICard appends to ResultText as well as console.
+- FinalScoreMultiplier applies once to turn-end total for the triggering turn.
+- TurnIndexIs OR semantics verified with Final_Royalty (turn 4 or 5).
+
+K. Notes
+- Keep text files ASCII only to avoid save issues.
+- Use RPSLog for round/turn/joker events and future extensions.
+
+Overhand Notes (2025-09-20 ? Engine Update: EndRound backend)
+- Scope: This note documents the latest engine changes without removing any historical content below. It supersedes earlier statements where conflicting.
+- Summary
+  - Implemented EndRound backend in GameManager (no new UI yet): single-call guarded end-of-round finalize.
+  - Introduced RoundResult DTO (totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed).
+  - Added public event OnRoundEnded(RoundResult) on GameManager for UI/storage systems to subscribe to.
+  - Ensured EndRound is invoked on both normal completion (turns exceeded) and early finish (AI out of cards).
+  - Input lock and round state are finalized at EndRound; Restart button remains enabled.
+  - Logging: RPSLog.Event("Round", "Ended", ¡¦) emits a round summary line.
+- Not in this update
+  - JokerManager RoundEnd timing and RoundEnd multipliers are not implemented yet (Phase D). Existing TurnSettlement pipeline remains unchanged.
+- Integration guidance
+  - UI layer: subscribe to GameManager.OnRoundEnded to display final summary or persist scores. Until UI is authored, resultText gets a simple "(Round finished)" line.
+  - Determinism/Ordering: EndRound is guarded by _roundEnded flag and called exactly once per round.
+  - Restart: restartReloadScene option preserved; non-reload path calls StartRound() which resets the guard and state.
+
+API Updates (Delta)
+- GameManager
+  - event Action<RoundResult> OnRoundEnded
+  - private bool _roundEnded guard; reset in StartRound()
+  - private void EndRound():
+    - Locks input, sets roundActive=false
+    - Builds RoundResult { totalScore, W/D/L, turnsPlanned, turnsPlayed, rerollsUsed }
+    - Logs RPSLog Round.Ended
+    - Invokes OnRoundEnded once (guarded try/catch)
+  - Calls EndRound() when:
+    - currentTurn > MaxTurns (normal end)
+    - aiHand.Count == 0 after a player pick (early end)
+- Data
+  - RoundResult fields: totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed
+
+Test Checklist Addendum
+- End-of-round event
+  - Normal end at configured turns: OnRoundEnded fires once, turnsPlayed equals MaxTurns.
+  - Early AI depletion: OnRoundEnded fires once, turnsPlayed reflects actual played turns.
+  - Reroll usage is reported correctly in RoundResult.rerollsUsed.
+  - Input is locked post-end; Restart is available.
+- Regression
+  - Reroll flow before Turn 1 unchanged, reapply mechanics intact.
+  - Per-turn settlement logs and totals unchanged.
+
+Next Steps (Phase D ? planned)
+- Add Joker timing RoundEnd and effect FinalTotalMultiplier.
+- Provide JokerManager.OnRoundEnd(GameManager/RoundResult) pipeline, executed once after the final turn.
+- Define order-of-operations vs any end-of-round flags (e.g., IgnoreBossPenalty placeholder).
+- Extend PRD addendum with RoundEnd timing test cases when implemented.

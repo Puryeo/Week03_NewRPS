@@ -1,3 +1,30 @@
+Overhand Notes (2025-09-20 ? Sync with Engine EndRound backend)
+- Status
+  - Phase A/B engine and assets: implemented and QA complete (see below history).
+  - New in this pass: GameManager EndRound backend + RoundResult DTO + OnRoundEnded event; no RoundEnd Joker timing yet.
+- Engine deltas (since last note)
+  - GameManager
+    - Added EndRound() with single-apply guard; invoked on normal/early round finish.
+    - Added RoundResult { totalScore, wins, draws, losses, turnsPlanned, turnsPlayed, rerollsUsed }.
+    - Added event Action<RoundResult> OnRoundEnded; UI/storage can subscribe.
+    - Input locked at round end; Restart button remains operable; resultText gets a simple "(Round finished)" line.
+    - Logs: RPSLog.Event("Round", "Ended", ¡¦) emitted once per round.
+  - No changes to JokerManager pipeline in this pass (RoundStart, TurnSettlement only).
+- Immediate guidance to continue work
+  1) If UI work starts later: subscribe to GameManager.OnRoundEnded and render a summary panel; leave buttons disabled except Restart.
+  2) For Phase D: implement JokerTimingType.RoundEnd, add JokerManager.OnRoundEnd(GameManager, RoundResult) called from GameManager.EndRound (before event dispatch if RoundEnd effects can mutate final score).
+  3) Define FinalTotalMultiplier at RoundEnd. Decide order with respect to multiple RoundEnd effects and ensure single-apply.
+  4) Extend tests: verify early termination path still fires OnRoundEnded exactly once.
+- Acceptance checklist (for this pass)
+  - EndRound fires exactly once per round (guarded).
+  - RoundResult fields populated correctly; rerollsUsed matches the count consumed before turn 1.
+  - Normal end and early AI depletion both call EndRound.
+  - No regression in TurnSettlement effects and logs.
+- Notes
+  - Keep this file ASCII only. Do not remove legacy content; this block supersedes below where conflicting.
+
+--- legacy content below (kept for history) ---
+
 Overhand Notes (Handover Summary - 2025-09-20)
 - Scope update
   - Phase A and Phase B engine work and assets are implemented and QA complete.
@@ -176,7 +203,7 @@ Idea-by-idea plan
 
 13) Iron_Heart
 - Spec: At round end, if no reroll used, +20.
-- Needs: Condition RerollUsedEquals(0) (requires context.rerollsUsed)
+- Needs: Condition RerollUsedEquals(0) (requires GameContext.rerollsUsed)
 - Status: NEED NEW CONDITION + GameContext plumb (expose rerolls used or derive: playerRerollMax - playerRerollsLeft).
 
 [Rock] Catalyst
@@ -254,34 +281,3 @@ Proposed incremental implementation order (lowest risk first)
   - Effects IgnoreBossPenalty (no-op flag until systems exist)
   - Effect FinalTotalMultiplier (RoundEnd hook); ensure single application and order vs other RoundEnd effects
   - Hand size deltas (Slave_Contract) with UI and validation coupling
-
-Authoring template (example)
-- Twin_Blades.asset
-  - Timing: TurnSettlement
-  - Conditions: ConsecutiveOutcomeWithChoiceIs(outcome=Win, choice=Scissors, intValue=2)
-  - Effect: FinalScoreMultiplier(intValue=2)
-- Geological_Survey.asset
-  - Timing: TurnSettlement
-  - Conditions: OutcomeIs(Loss), PlayerChoiceIs(Rock)
-  - Effect: RevealNextAICard()
-- Ore_Vein.asset (after TurnStart support)
-  - Timing: TurnStart
-  - Conditions: PlayerHasAtLeastCountInHand(choice=Rock, intValue>=1)
-  - Effect: AddScorePerPlayerHandCount(choice=Rock, intValue=2)
-
-Engine work items (no code now; design only)
-- Define new enums in JokerEnums: TurnStart, RoundEnd, RoundPrepare (Timing); TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, PlayerHasAtLeastCountInHand, RerollUsedEquals (Condition); RevealNextAICard, AddScorePerPlayerHandCount, ModifyTurnsToPlayDelta, AddCardsToPlayerHand, AddCardsToAIHand, IgnoreBossPenalty, FinalTotalMultiplier (Effect)
-- Extend GameContext: rerollsUsed, playerHandCountByChoice (or query via GameManager), totalMultiplier (for RoundEnd), and expose a safe API in GameManager for hand edits and peek
-- JokerManager: add switches for new tags; ensure RoundEnd phase applies totalMultiplier once; document order vs TurnSettlement
-- Logging: RPSLog entries for new effects, especially hand/turns mutations and RoundEnd total mutation
-- Validation: guard against negative or exceeding hand sizes; clamp and warn
-
-Test checklist additions
-- Verify RoundPrepare hooks do not conflict with RoundStart effects
-- TurnStart additive scoring runs before outcome; ensure delta is included once
-- RevealNextAICard deterministic when AIDrawFromFront is active; otherwise specify behavior
-- FinalTotalMultiplier: round-end sign flip multiplies final total once; interacts predictably with other RoundEnd multipliers
-
-Notes
-- Boss penalty and other meta systems are out-of-scope; implement as flags with no-op until systems exist
-- Keep additive pipeline predictable; prefer additive and multiplicative effects over destructive rewrites

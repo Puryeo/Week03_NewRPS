@@ -10,11 +10,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 9f86557d0063a95409e1a3b5e4036868, type: 3}
-  m_Name: Glass_Scissors
+  m_Name: Confidential_Document
   m_EditorClassIdentifier: 
-  jokerName: Glass_Scissors
-  description: Win with Scissors +10; Loss with Scissors -15.
-  archetypes: 4
+  jokerName: Confidential_Document
+  description: "If Win with Paper \u2192 reveal opponent next card."
+  archetypes: 8
   tags:
   - category: 0
     timingType: 2
@@ -28,27 +28,39 @@ MonoBehaviour:
     filterByChoice: 0
     useBetweenRange: 0
     extra: 
-  - category: 2
+  - category: 1
     timingType: 0
-    conditionType: 0
-    effectType: 1
+    conditionType: 1
+    effectType: 0
     outcomeParam: 0
-    choiceParam: 2
-    intValue: 10
+    choiceParam: 0
+    intValue: 0
     stringValue: 
-    filterByOutcome: 1
-    filterByChoice: 1
+    filterByOutcome: 0
+    filterByChoice: 0
+    useBetweenRange: 0
+    extra: 
+  - category: 1
+    timingType: 0
+    conditionType: 2
+    effectType: 0
+    outcomeParam: 0
+    choiceParam: 1
+    intValue: 0
+    stringValue: 
+    filterByOutcome: 0
+    filterByChoice: 0
     useBetweenRange: 0
     extra: 
   - category: 2
     timingType: 0
     conditionType: 0
-    effectType: 1
-    outcomeParam: 2
-    choiceParam: 2
-    intValue: -15
+    effectType: 6
+    outcomeParam: 0
+    choiceParam: 0
+    intValue: 0
     stringValue: 
-    filterByOutcome: 1
-    filterByChoice: 1
+    filterByOutcome: 0
+    filterByChoice: 0
     useBetweenRange: 0
     extra: 

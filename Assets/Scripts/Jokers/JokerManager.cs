@@ -127,7 +127,6 @@ namespace Jokers
         {
             if (gm == null || _order.Count == 0) return;
 
-            // 턴 수 변형은 누적 패스로 계산하여, Reroll 재평가 시 중복 가산되지 않도록 한다.
             gm.BeginPreparePass(reapply: false);
 
             for (int i = 0; i < _order.Count; i++)
@@ -163,16 +162,7 @@ namespace Jokers
                                 if (playerCount < c.intValue) condOk = false;
                             }
                             break;
-                        case JokerConditionType.IsLastTurn:
-                        case JokerConditionType.PlayedAtLeastCount:
-                        case JokerConditionType.ConsecutiveDrawWithChoiceIs:
-                        case JokerConditionType.OutcomeIs:
-                        case JokerConditionType.PlayerChoiceIs:
-                        case JokerConditionType.TurnIndexIs:
-                        case JokerConditionType.ConsecutiveOutcomeWithChoiceIs:
-                        case JokerConditionType.RerollUsedEquals:
-                        case JokerConditionType.None:
-                            // Not applicable or ignored at Prepare
+                        default:
                             break;
                     }
                     if (!condOk) break;
@@ -206,6 +196,20 @@ namespace Jokers
                                 RPS.RPSLog.Event("HandMut", "Prepare", $"name={data.jokerName}, target=AI, add={eff.intValue}, choice={eff.choiceParam}");
                             }
                             break;
+                        case JokerEffectType.AddRandomCardsToPlayerHand:
+                            if (eff.intValue > 0)
+                            {
+                                gm.AddRandomCardsToPlayerHand(eff.intValue);
+                                RPS.RPSLog.Event("HandMut", "Prepare", $"name={data.jokerName}, target=Player, addRandom={eff.intValue}");
+                            }
+                            break;
+                        case JokerEffectType.AddRandomCardsToAIHand:
+                            if (eff.intValue > 0)
+                            {
+                                gm.AddRandomCardsToAIHand(eff.intValue);
+                                RPS.RPSLog.Event("HandMut", "Prepare", $"name={data.jokerName}, target=AI, addRandom={eff.intValue}");
+                            }
+                            break;
                         case JokerEffectType.ShowInfo:
                             if (gm != null)
                             {
@@ -214,13 +218,11 @@ namespace Jokers
                             }
                             break;
                         default:
-                            // ignore at Prepare
                             break;
                     }
                 }
             }
 
-            // 한 번에 커밋하여 UI와 상태 반영, applied 누적값 기록
             gm.CommitPreparePass();
         }
 
@@ -537,6 +539,134 @@ namespace Jokers
                             break;
                     }
                 }
+            }
+        }
+
+        // Phase D: RoundEnd pipeline
+        public void OnRoundEnd(GameManager gm, RoundResult result)
+        {
+            if (gm == null || result == null || _order.Count == 0) return;
+
+            int totalDelta = 0;    // 가산 합
+            int totalMul = 1;      // 곱 누적(>=1, 음수 허용)
+            bool ignoreBossPenalty = false;
+
+            var playerHist = gm.GetPlayerHistory();
+            var outcomeHist = gm.GetOutcomeHistory();
+            int turnsPlayed = result.turnsPlayed;
+
+            for (int i = 0; i < _order.Count; i++)
+            {
+                var data = _order[i];
+                if (data == null || data.tags == null) continue;
+
+                bool timingOk = false;
+                foreach (var t in data.tags)
+                {
+                    if (t == null) continue;
+                    if (t.category == JokerTagCategory.Timing && t.timingType == JokerTimingType.RoundEnd)
+                    { timingOk = true; break; }
+                }
+                if (!timingOk) continue;
+
+                bool conditionsOk = true;
+                foreach (var tag in data.tags)
+                {
+                    if (tag == null || tag.category != JokerTagCategory.Condition) continue;
+                    switch (tag.conditionType)
+                    {
+                        case JokerConditionType.PlayedAtLeastCount:
+                            if (tag.choiceParam == Choice.None) { conditionsOk = false; break; }
+                            {
+                                int cnt = 0; if (playerHist != null) { for (int k = 0; k < playerHist.Count; k++) if (playerHist[k] == tag.choiceParam) cnt++; }
+                                if (cnt < tag.intValue) conditionsOk = false;
+                            }
+                            break;
+                        case JokerConditionType.RerollUsedEquals:
+                            if (result.rerollsUsed != tag.intValue) conditionsOk = false;
+                            break;
+                        case JokerConditionType.ChoiceUsedOnTurnIndex:
+                            {
+                                int idx = Mathf.Clamp(tag.intValue - 1, 0, turnsPlayed - 1);
+                                if (playerHist == null || turnsPlayed <= 0 || playerHist.Count < turnsPlayed) { conditionsOk = false; break; }
+                                if (idx < 0 || idx >= turnsPlayed) { conditionsOk = false; break; }
+                                if (playerHist[idx] != tag.choiceParam) conditionsOk = false;
+                            }
+                            break;
+                        case JokerConditionType.WinWithChoiceAtLeastCount:
+                            {
+                                if (playerHist == null || outcomeHist == null || playerHist.Count != outcomeHist.Count) { conditionsOk = false; break; }
+                                int winsWithChoice = 0;
+                                for (int k = 0; k < outcomeHist.Count; k++)
+                                {
+                                    if (outcomeHist[k] == Outcome.Win && playerHist[k] == tag.choiceParam) winsWithChoice++;
+                                }
+                                if (winsWithChoice < tag.intValue) conditionsOk = false;
+                            }
+                            break;
+                        case JokerConditionType.WinsOnlyWithChoice:
+                            {
+                                if (playerHist == null || outcomeHist == null || playerHist.Count != outcomeHist.Count) { conditionsOk = false; break; }
+                                bool hasWin = false; bool ok = true;
+                                for (int k = 0; k < outcomeHist.Count; k++)
+                                {
+                                    if (outcomeHist[k] == Outcome.Win)
+                                    {
+                                        hasWin = true;
+                                        if (playerHist[k] != tag.choiceParam) { ok = false; break; }
+                                    }
+                                }
+                                if (!ok || !hasWin) conditionsOk = false;
+                            }
+                            break;
+                        default:
+                            // ignore other condition types at RoundEnd
+                            break;
+                    }
+                    if (!conditionsOk) break;
+                }
+                if (!conditionsOk) continue;
+
+                foreach (var eff in data.tags)
+                {
+                    if (eff == null || eff.category != JokerTagCategory.Effect) continue;
+                    switch (eff.effectType)
+                    {
+                        case JokerEffectType.AddScoreDelta:
+                            totalDelta += eff.intValue;
+                            break;
+                        case JokerEffectType.FinalTotalMultiplier:
+                            if (eff.intValue != 0) totalMul *= eff.intValue;
+                            break;
+                        case JokerEffectType.IgnoreBossPenalty:
+                            ignoreBossPenalty = true;
+                            break;
+                        case JokerEffectType.ShowInfo:
+                            if (gm != null)
+                            {
+                                string msg = string.IsNullOrEmpty(eff.stringValue) ? $"Joker RoundEnd: {data.jokerName}" : eff.stringValue;
+                                gm.ShowInfo(msg);
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
+
+            int before = result.totalScore;
+            long afterLong = (long)(before + totalDelta) * (long)totalMul;
+            int after = (int)Mathf.Clamp(afterLong, int.MinValue, int.MaxValue);
+            if (after != before)
+            {
+                RPS.RPSLog.Event("RoundEnd", "Apply", $"delta={totalDelta}, mul={totalMul}, before={before}, after={after}");
+            }
+            result.totalScore = after;
+
+            if (ignoreBossPenalty)
+            {
+                // Placeholder: Game has no boss penalty yet. Keep a flag or log for future.
+                RPS.RPSLog.Event("RoundEnd", "IgnoreBoss", "flag=true");
             }
         }
 

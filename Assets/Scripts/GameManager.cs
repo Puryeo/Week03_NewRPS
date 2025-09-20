@@ -4,6 +4,8 @@ using UnityEngine.SceneManagement;
 using TMPro;
 using Jokers;
 using NewRPS.Debugging;
+using System; // for Action<>
+
 
 // 게임의 핵심 흐름을 관리하는 매니저 스크립트
 // 이 클래스는 다음을 책임진다:
@@ -11,12 +13,25 @@ using NewRPS.Debugging;
 // - 손패 생성 및 유지: AI/플레이어 손패 리스트 관리, 보장 수량, 셔플
 // - 점수/통계 관리: 누적 점수, 승/무/패 카운트, 턴 번호
 // - 리롤(Reroll) 관리: 첫 턴 시작 전 한정, 사용 횟수 기록, UI 반영
-// - 조커 시스템 훅 호출: RoundPrepare(Phase C), RoundStart, TurnStart(Phase C), TurnSettlement
+// - 조커 시스템 훅 호출: RoundPrepare(Phase C), RoundStart, TurnStart(Phase C), TurnSettlement, RoundEnd(Phase D)
 // - UI 업데이트: 각종 TextMeshProUGUI와 Restart 버튼 상태
 // 외부와의 주요 상호작용:
-// - JokerManager: OnRoundPrepare(this) → OnRoundStart(this) → OnTurnStart(GameContext) → ExecuteTurnSettlementEffects(GameContext)
+// - JokerManager: OnRoundPrepare(this) → OnRoundStart(this) → OnTurnStart(GameContext) → ExecuteTurnSettlementEffects(GameContext) → OnRoundEnd(this, RoundResult)
 // - DEBUGManager: DebugTrySetPlayerHandCounts를 통해 플레이어 손패를 디버그 오버라이드
 // - UI 버튼: OnClickRock/Paper/Scissors/RerollPlayerHand/Restart로 사용자 입력 수신
+
+[Serializable]
+public class RoundResult
+{
+    public int totalScore;
+    public int wins;
+    public int draws;
+    public int losses;
+    public int turnsPlanned;
+    public int turnsPlayed;
+    public int rerollsUsed;
+}
+
 public class GameManager : MonoBehaviour
 {
     [Header("UI References")] 
@@ -31,6 +46,10 @@ public class GameManager : MonoBehaviour
 
     [Header("Managers")]
     public JokerManager jokerManager; // 조커 매니저. 라운드 훅과 점수 파이프라인을 수행
+
+    [Header("Flow")]
+    [Tooltip("씬 시작 시 자동으로 라운드를 시작할지 여부(드래프트 플로우 사용 시 끄세요)")]
+    [SerializeField] private bool startOnPlay = true;
 
     [Header("Turns")]
     [Tooltip("이번 라운드에 진행할 턴 수")]
@@ -66,6 +85,7 @@ public class GameManager : MonoBehaviour
     private System.Random rng;                              // 손패 생성과 AI 랜덤 선택에 사용(결정적 순서 보장)
     private bool roundActive = false;                       // 라운드 진행 여부
     private bool inputLocked = false;                       // 턴 처리 중 입력 잠금
+    private bool _playerActedThisRound = false;             // 플레이 액션(카드 소모) 발생 여부
 
     private int winCount = 0;                 // 누적 승리 수
     private int drawCount = 0;                // 누적 무승부 수
@@ -82,6 +102,10 @@ public class GameManager : MonoBehaviour
 
     // UI 표기용 최대 턴수(최소 1로 보정)
     private int MaxTurns => Mathf.Max(1, turnsToPlay);
+
+    // 라운드 종료 1회 가드 및 이벤트
+    private bool _roundEnded = false;
+    public event Action<RoundResult> OnRoundEnded;
 
     // 인스펙터 값 보정(음수 방지, 합계 초과 보정)
     private void OnValidate()
@@ -115,9 +139,19 @@ public class GameManager : MonoBehaviour
         // 플레이어 보장 수량은 미사용(완전 랜덤)
     }
 
-    // 유니티 시작 시 자동으로 라운드 시작
+    // 유니티 시작 시 자동으로 라운드 시작 (startOnPlay==true일 때만)
     private void Start()
     {
+        if (startOnPlay)
+        {
+            StartRound();
+        }
+    }
+
+    // 외부 플로우(드래프트 확정 등)에서 라운드를 시작할 때 호출
+    public void StartRoundFromFlow()
+    {
+        if (roundActive) return;
         StartRound();
     }
 
@@ -142,9 +176,11 @@ public class GameManager : MonoBehaviour
         rng = new System.Random();
         playerRerollsLeft = playerRerollMax;
         playerRerollsUsed = 0;
+        _playerActedThisRound = false; // 첫 액션 전으로 초기화
         if (turnsToPlay < 1) turnsToPlay = 1;
         _prepareTurnsDeltaApplied = 0; // Prepare 델타 누적 초기화
         _prepareTurnsDeltaPending = 0; _preparePassActive = false;
+        _roundEnded = false; // 라운드 종료 가드 리셋
 
         // 손패 생성
         if (_initialHandOverride.HasValue)
@@ -255,11 +291,11 @@ public class GameManager : MonoBehaviour
             Debug.Log("[Reroll] 라운드 비활성");
             return;
         }
-        // 첫 턴 전이 아니거나, 이미 손패가 일부 사용된 경우 불가
-        if (currentTurn > 1 || playerHand.Count != playerHandSize)
+        // 변경: 플레이 액션(카드 소모) 전까지만 허용
+        if (_playerActedThisRound)
         {
-            Debug.Log("[Reroll] 이미 턴 진행 - 첫 턴 전에만 가능");
-            if (resultText != null) { resultText.text = "Result: Reroll unavailable (turn started)"; resultText.color = Color.white; }
+            Debug.Log("[Reroll] 이미 턴 진행 - 플레이 액션 전까지만 가능");
+            if (resultText != null) { resultText.text = "Result: Reroll unavailable (action started)"; resultText.color = Color.white; }
             return;
         }
         if (playerRerollsLeft <= 0)
@@ -269,8 +305,10 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        // 플레이어는 완전 랜덤 리롤
-        GenerateHand(playerHand, playerHandSize, 0, 0, 0);
+        // 현재 손패 장수를 유지한 채 완전 랜덤 리롤(Prepare로 증가한 장수 보존)
+        int newSize = Mathf.Max(0, playerHand.Count);
+        if (newSize == 0) newSize = playerHandSize; // 안전 장치
+        GenerateHand(playerHand, newSize, 0, 0, 0);
         playerRerollsLeft--;
         playerRerollsUsed++;
 
@@ -321,6 +359,7 @@ public class GameManager : MonoBehaviour
             return;
         }
         inputLocked = true;
+        _playerActedThisRound = true; // 첫 액션 수행됨 → 이후 리롤 불가
         Choice playerChoice = desired;
         playerHand.RemoveAt(playerCardIndex);
 
@@ -362,6 +401,7 @@ public class GameManager : MonoBehaviour
             }
             if (restartButton != null) restartButton.SetActive(true);
             UpdateUI();
+            EndRound();
             return;
         }
 
@@ -450,9 +490,10 @@ public class GameManager : MonoBehaviour
         {
             roundActive = false;
             if (resultText != null)
-                resultText.text += "\n(Round finished - Step3에서 최종 처리)"; // RoundEnd는 후속 단계에서 구현 예정
+                resultText.text += "\n(Round finished)"; // 간단 표기만 유지(UI는 후순위)
             if (restartButton != null) restartButton.SetActive(true); // 항상 활성 유지
-            Debug.Log("[Round] 턴 종료 - EndRound 예정");
+            Debug.Log("[Round] 턴 종료 - EndRound 처리");
+            EndRound();
         }
         else
         {
@@ -468,7 +509,7 @@ public class GameManager : MonoBehaviour
         return Choice.Rock;
     }
 
-    // AI가 마지막으로 플레이할 턘에 해당하는 카드 미리보기. 남은 장수와 계획 턴 수를 바탕으로 인덱스 계산
+    // AI가 마지막으로 플레이할 턘에 해당하는 카드 미리보기. 남은 장수와 계획 턨 수를 바탕으로 인덱스 계산
     public Choice PeekAIBack()
     {
         int count = (aiHand != null) ? aiHand.Count : 0;
@@ -487,10 +528,48 @@ public class GameManager : MonoBehaviour
         _pendingInfoMsg = msg; // PlayerMakesChoice 말미에서 UI로 출력
     }
 
-    // 라운드 종료 최종 처리(보상/메타 등)는 후속 단계에서 구현
+    // 라운드 종료 최종 처리(보상/메타 등) - 백엔드만 구현, UI는 후순위
     private void EndRound()
     {
-        Debug.LogWarning("EndRound는 Step3에서 구현 예정입니다.");
+        if (_roundEnded) return;
+        _roundEnded = true;
+
+        inputLocked = true;
+        roundActive = false;
+
+        var result = new RoundResult
+        {
+            totalScore = currentScore,
+            wins = winCount,
+            draws = drawCount,
+            losses = lossCount,
+            turnsPlanned = MaxTurns,
+            turnsPlayed = Mathf.Clamp(currentTurn - 1, 0, MaxTurns),
+            rerollsUsed = playerRerollsUsed
+        };
+
+        // Phase D: RoundEnd 조커 파이프라인(최종 점수 변형 가능). 이벤트/로그 전에 호출
+        if (jokerManager != null)
+        {
+            try { jokerManager.OnRoundEnd(this, result); }
+            catch (Exception ex) { Debug.LogError($"[RoundEnd] Joker pipeline error: {ex}"); }
+        }
+
+        // 조커 적용 후 최종 점수를 내부 상태에 반영하고 UI 갱신
+        currentScore = result.totalScore;
+        UpdateUI();
+
+        // 최종 값으로 로그 출력
+        RPS.RPSLog.Event("Round", "Ended", $"score={result.totalScore}, W={result.wins}, D={result.draws}, L={result.losses}, planned={result.turnsPlanned}, played={result.turnsPlayed}, rerollsUsed={result.rerollsUsed}");
+
+        try
+        {
+            OnRoundEnded?.Invoke(result);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[Round] OnRoundEnded error: {ex}");
+        }
     }
 
     // UI에서 재시작 버튼을 눌렀을 때 라운드 재시작
@@ -667,7 +746,7 @@ public class GameManager : MonoBehaviour
         return changed;
     }
 
-    // 디버그 지원: 플레이어 손패를 지정 개수로 강제 세팅(첫 턴 전 권장). 필요 시 강제(force) 적용 가능
+    // 디버그 지원: 플레이어 손패를 지정 개수로 강제 세팅(앞 턘 전 권장). 필요 시 강제(force) 적용 가능
     public bool DebugTrySetPlayerHandCounts(int rock, int paper, int scissors, bool shuffle = true, bool force = false)
     {
         if (!roundActive && !force) { Debug.LogWarning("[Debug] Round inactive"); return false; }
@@ -755,5 +834,29 @@ public class GameManager : MonoBehaviour
     {
         if (rock < 0) rock = 0; if (paper < 0) paper = 0; if (scissors < 0) scissors = 0;
         _initialHandOverride = (rock, paper, scissors, shuffle);
+    }
+
+    // RoundEnd/authoring에서 라운드 히스토리 접근 용도
+    public System.Collections.Generic.IReadOnlyList<Choice> GetPlayerHistory() => playerHistory;
+    public System.Collections.Generic.IReadOnlyList<Outcome> GetOutcomeHistory() => outcomeHistory;
+
+    // Phase C RoundPrepare helpers for random card adds
+    public void AddRandomCardsToPlayerHand(int count)
+    {
+        if (count <= 0) return;
+        for (int i = 0; i < count; i++)
+        {
+            playerHand.Add((Choice)rng.Next(0, 3));
+        }
+        UpdateUI();
+    }
+    public void AddRandomCardsToAIHand(int count)
+    {
+        if (count <= 0) return;
+        for (int i = 0; i < count; i++)
+        {
+            aiHand.Add((Choice)rng.Next(0, 3));
+        }
+        UpdateUI();
     }
 }

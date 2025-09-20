@@ -9,7 +9,7 @@ namespace Jokers
 
     // 시점 태그: 라운드시작, 턴결산 등 실행 타이밍 지정
     // None을 두어 인스펙터에서 사용하지 않는 값을 명시적으로 선택할 수 있도록 한다.
-    public enum JokerTimingType { None, RoundStart, TurnSettlement, RoundPrepare, TurnStart }
+    public enum JokerTimingType { None, RoundStart, TurnSettlement, RoundPrepare, TurnStart, RoundEnd }
 
     // 조건 태그: 결과/선택 등에 기반한 발동 제한
     public enum JokerConditionType
@@ -28,7 +28,11 @@ namespace Jokers
         ConsecutiveOutcomeWithChoiceIs, // 연속으로 outcomeParam과 choiceParam이 intValue 회 일치하는지 여부
         RerollUsedEquals,            // 사용된 리롤 수가 intValue와 같은지 여부
         // Phase C additions
-        PlayerHasAtLeastCountInHand  // 플레이어 손패에 choiceParam 카드가 intValue 이상 보유
+        PlayerHasAtLeastCountInHand,  // 플레이어 손패에 choiceParam 카드가 intValue 이상 보유
+        // Phase D additions
+        ChoiceUsedOnTurnIndex,       // 턴 인덱스(1-based)에서 choiceParam이 사용되었는지 여부
+        WinWithChoiceAtLeastCount,   // 결과가 승리이며 플레이어 선택이 choiceParam인 경우 intValue 회 이상인지 여부
+        WinsOnlyWithChoice           // 승리가 choiceParam일 때만 가능한지 여부 (승리 1회 이상)
     }
 
     // 효과 태그: 점수 가산, 정보 출력, AI 드로우 정책 강제 등 구체 효과 지정
@@ -48,7 +52,12 @@ namespace Jokers
         ModifyTurnsToPlayDelta,      // 라운드 시작 전 턴 수 변경(델타)
         AddCardsToPlayerHand,        // 플레이어 손패에 카드 추가
         AddCardsToAIHand,            // AI 손패에 카드 추가
-        AddScorePerPlayerHandCount   // TurnStart: 플레이어 손패 내 choiceParam 1장당 intValue 점수 가산
+        AddScorePerPlayerHandCount,  // TurnStart: 플레이어 손패 내 choiceParam 1장당 intValue 점수 가산
+        AddRandomCardsToPlayerHand,  // RoundPrepare: 플레이어 손패에 무작위 카드 추가
+        AddRandomCardsToAIHand,      // RoundPrepare: AI 손패에 무작위 카드 추가
+        // Phase D additions
+        FinalTotalMultiplier,        // RoundEnd: 라운드 최종 점수 배수 적용
+        IgnoreBossPenalty            // RoundEnd/Prepare: 보스 발생 패널티 무시 (플래그 설정)
     }
 
     // 스폰/디자인 분류용 메타 태그(아키타입). 조커 데이터에 부착하여 분류/필터링에 활용한다.

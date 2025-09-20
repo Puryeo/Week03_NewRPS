@@ -16,6 +16,10 @@ namespace Jokers
         [Header("스폰/디자인 분류 (Archetypes)")]
         public JokerArchetype archetypes = JokerArchetype.None; // Anchor/Payoff/Catalyst 등 조합 가능
 
+        [Header("스폰 가중치 (Draft Offer)")]
+        [Tooltip("오퍼 추첨시 가중치. 값이 클수록 선택될 확률이 높음 (기본 1)")]
+        public int weight = 1;
+
         [Header("태그 목록")]
         public List<JokerTag> tags = new List<JokerTag>();
     }
