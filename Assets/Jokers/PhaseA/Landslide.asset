@@ -1,0 +1,58 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f86557d0063a95409e1a3b5e4036868, type: 3}
+  m_Name: Landslide
+  m_EditorClassIdentifier: 
+  jokerName: Landslide
+  description: If Rock used >=3 times, +20 at last turn.
+  archetypes: 2
+  tags:
+  - category: 0
+    timingType: 2
+    conditionType: 0
+    effectType: 0
+    outcomeParam: 0
+    choiceParam: 0
+    intValue: 0
+    stringValue: 
+    filterByOutcome: 0
+    filterByChoice: 0
+  - category: 1
+    timingType: 0
+    conditionType: 3
+    effectType: 0
+    outcomeParam: 0
+    choiceParam: 0
+    intValue: 3
+    stringValue: 
+    filterByOutcome: 0
+    filterByChoice: 0
+  - category: 1
+    timingType: 0
+    conditionType: 5
+    effectType: 0
+    outcomeParam: 0
+    choiceParam: 0
+    intValue: 1
+    stringValue: 
+    filterByOutcome: 0
+    filterByChoice: 0
+  - category: 2
+    timingType: 0
+    conditionType: 0
+    effectType: 1
+    outcomeParam: 0
+    choiceParam: 0
+    intValue: 20
+    stringValue: 
+    filterByOutcome: 0
+    filterByChoice: 0

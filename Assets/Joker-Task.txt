@@ -1,3 +1,44 @@
+Overhand Notes (Handover Summary - 2025-09-20)
+- Scope update
+  - Phase A and Phase B engine work and assets are implemented and QA complete.
+  - Keep legacy content below for history. Use this section for current status.
+- Engine changes implemented
+  - Tag additions: Condition TurnIndexIs, Condition ConsecutiveOutcomeWithChoiceIs, Condition RerollUsedEquals, Effect RevealNextAICard.
+  - GameContext: added rerollsUsed for tag conditions.
+  - JokerManager:
+    - TurnSettlement interpreter supports the new conditions and effect.
+    - RoundStart AI hand mutation refined for Paper_Dominance: converts only AI Paper or Scissors to Rock, exact count, no duplicates.
+    - TurnIndexIs OR semantics: if multiple TurnIndexIs tags exist on one Joker, pass when any matches (used by Final_Royalty for turn 4 or 5).
+    - FinalScoreMultiplier applies to the turn-end total. delta = (currentTotal + delta) * mul - currentTotal.
+  - GameManager:
+    - GetPlayerRerollsUsed provided and piped into GameContext.rerollsUsed.
+    - ShowInfo now queues settlement info and appends it under ResultText after the per-turn result, so reveal messages show in UI.
+    - Helper ReplaceAIPaperOrScissorsToRock to mutate AI hand deterministically without duplicate picks.
+  - Namespaces: DEBUGManager moved to NewRPS.Debugging; editor updated to reference it.
+- Assets authored
+  - Phase A: Scissors_Collector, Blade_of_Vengeance, Glass_Scissors, Sturdy_Barricade, Landslide, Force_Of_Nature, Devils_Contract, Paper_Dominance.
+  - Phase B: Geological_Survey, Twin_Blades, Final_Royalty (TurnIndex 4 or 5), Iron_Heart (+30).
+- QA outcomes (key points)
+  - Force_Of_Nature: multiplies total on the turn Rock count reaches 5 (not bound to last turn 5).
+  - Paper_Dominance: converts exactly 2 AI cards from Paper or Scissors to Rock; re-applies on Reroll via OnJokerToggled.
+  - Geological_Survey: Loss with Rock reveals next AI front card; message appears in ResultText and console.
+  - Final_Royalty: valid on turn 4 or 5 (two TurnIndexIs tags) and requires Win with Paper.
+  - Iron_Heart: +30 on last turn if no reroll used.
+- Authoring guidance
+  - To target multiple turns, add multiple TurnIndexIs tags; runtime treats them as OR.
+  - For reveal messages during settlement, use RevealNextAICard; UI appends the message under the result line for that turn.
+  - For AI hand mutation to Rock, use ReplaceAIRandomCardsToChoice with choiceParam Rock; engine limits candidates to Paper or Scissors.
+  - For per-turn multipliers, use FinalScoreMultiplier.
+- Next steps (not implemented yet)
+  - Phase C: timings RoundPrepare and TurnStart; effects AddCardsToPlayerHand, AddCardsToAIHand, ModifyTurnsToPlayDelta; condition PlayerHasAtLeastCountInHand.
+  - Phase D: timing RoundEnd; effect FinalTotalMultiplier; flags like IgnoreBossPenalty; ensure single-apply order at round end.
+- How to continue
+  1) To add new Jokers, use Tools > NewRPS authoring menu, then adjust tags in the asset.
+  2) To add new tag types, update JokerEnums, JokerTag, GameContext, and JokerManager in that order; add RPSLog logs; QA in Play Mode.
+  3) Keep this file ASCII only to avoid unicode save issues.
+
+--- legacy content below (kept for history) ---
+
 Joker Implementation Tasks (from '# 조커 아이디어.txt')
 
 Scope
@@ -199,7 +240,7 @@ Idea-by-idea plan
 - Status: NEW EFFECTS + TIMING; MEDIUM RISK (hand regen coupling).
 
 Proposed incremental implementation order (lowest risk first)
-- Phase A (no new tags required): 1,3,7,9,12,16,22,21(asset only) ⇒ author assets and validate
+- Phase A (no new tags required): 1,3,7,9,12,16,22,21(asset only) -> author assets and validate
 - Phase B (small additions):
   - Add Condition TurnIndexIs
   - Add Effect RevealNextAICard
@@ -210,9 +251,9 @@ Proposed incremental implementation order (lowest risk first)
   - Add Effects AddCardsToPlayerHand/AIHand, ModifyTurnsToPlayDelta
   - Add Condition PlayerHasAtLeastCountInHand
 - Phase D (advanced):
-  - Effects IgnoreBossPenalty (no-op flag until system exists)
+  - Effects IgnoreBossPenalty (no-op flag until systems exist)
   - Effect FinalTotalMultiplier (RoundEnd hook); ensure single application and order vs other RoundEnd effects
-  - Hand size deltas (Slave_Contract) with UI/validation coupling
+  - Hand size deltas (Slave_Contract) with UI and validation coupling
 
 Authoring template (example)
 - Twin_Blades.asset
@@ -243,4 +284,4 @@ Test checklist additions
 
 Notes
 - Boss penalty and other meta systems are out-of-scope; implement as flags with no-op until systems exist
-- Keep additive pipeline predictable; prefer additive/multiplicative effects over destructive rewrites
+- Keep additive pipeline predictable; prefer additive and multiplicative effects over destructive rewrites

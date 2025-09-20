@@ -123,7 +123,7 @@ Note: For tag authoring only, a sentinel value Choice.None exists in code. Gamep
 4. Features Out of Scope
 To focus on the prototype's objectives, the following features are explicitly excluded from the scope of work:
 
-// Joker System ? superseded by Addendum (see below)
+// Joker System - superseded by Addendum (see below)
 Consumables System
 
 Stage, Boss, and Score Hurdle Systems
@@ -146,68 +146,64 @@ A. Summary of Tasks Completed (Updated)
 - Modular Joker architecture implemented (Tag-based JokerData + JokerManager). Legacy IJoker/enum pipeline removed.
 - Scout information fix: shows first card and the actual last-play turn card, aligned with AI drawing from front when active.
 - Additive scoring pipeline: Jokers modify the base rule (Win +5 / Draw +3 / Loss +0) by adding deltas, enabling safe synergies.
+- Phase B additions: new tag types and plumbing (see Section C and E below).
 
 B. Current Rule Set (overrides/extends earlier sections)
 - Default: Player/AI each receive 6 cards; turnsToPlay defaults to 5. Both values are configurable in Inspector.
-- Base scoring remains: Win +5, Draw +3, Loss +0. All Joker effects are additive deltas to this base.
-- AI draw policy: if a Joker with ForceAIDrawFromFront is active, AI draws from the front for consistency; otherwise random.
-- Turn count independence: turnsToPlay is independent from hand sizes. If either side runs out of cards before all turns are played, the round ends early.
+- Base scoring remains: Win +5, Draw +3, Loss +0. Joker effects are applied additively to this base.
+- AI draw policy: if a Joker with ForceAIDrawFromFront is active, AI draws from the front; otherwise random.
+- Turn count independence: turnsToPlay is independent of hand sizes. If either side runs out of cards before all turns are played, the round ends early.
 
 C. Modular Joker System (Tag-based, Data-Driven Only)
-- Data Model
+- Data model
   - JokerData (ScriptableObject): jokerName, description, tags (List<JokerTag>).
-  - JokerTag: category (Timing/Condition/Effect), type (RoundStart/TurnSettlement etc.), parameters (Outcome/Choice/int/string, filters).
-  - Default values: Choice.None/Outcome.None/JokerTimingType.None are available for ¡°unused¡± fields.
+  - JokerTag: category (Timing/Condition/Effect), type, parameters (Outcome/Choice/int/string), optional filters at effect level.
+  - Default values: Choice.None/Outcome.None/JokerTimingType.None are available for unused fields.
 - Manager (JokerManager)
-  - Acts as Tag Interpreter and Effect Executor.
-  - Multiple active Jokers with ordered priority (last toggled = highest).
-  - Public API: SetJoker(JokerData), ToggleJoker(JokerData), GetCurrentJokerName(), GetPipelineDescription(), AIDrawFromFront.
-  - Executes tag-defined effects at specific timings: OnRoundStart(GameManager), ExecuteTurnSettlementEffects(GameContext).
-  - RoundStart sets AIDrawFromFront=true for this round if ForceAIDrawFromFront tag is present (intValue != 0).
-- Score pipeline is additive: GameManager builds GameContext and JokerManager accumulates scoreDelta via Effect tags.
-- Tag schema (incremental):
-  - Timing: RoundStart, TurnSettlement
-  - Condition: OutcomeIs, PlayerChoiceIs, PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn
-  - Condition (hand comparison): PlayerHasMoreOfChoiceThanAI
-  - Effect: AddScoreDelta, ForceAIDrawFromFront, ShowInfo, FinalScoreMultiplier
-  - Effect (AI hand mutation): ReplaceAIRandomCardsToChoice (intValue cards -> choiceParam)
+  - Tag interpreter and effect executor.
+  - Multiple active Jokers with ordered priority (last toggled is highest).
+  - Public API: SetJoker, ToggleJoker, GetCurrentJokerName, GetPipelineDescription, AIDrawFromFront.
+  - Timings executed: OnRoundStart(GameManager), ExecuteTurnSettlementEffects(GameContext).
+  - RoundStart may set AIDrawFromFront=true for the round if ForceAIDrawFromFront is present.
 
-D. Implemented Jokers (expressed via tags)
-- All_In_Rock
-  - Target: playerChoice == Rock
-  - Win: +15 (=> base 5 + 15 = 20), Draw/Loss: -9999
-- The_Contrarian
-  - Target: all
-  - Win: -5 (=> 0), Draw: -1 (=> 2), Loss: +8 (=> 8)
-- Scout
-  - Target: information
-  - On RoundStart or when toggled, shows AI first/last-turn card (GameManager.PeekAIFront/PeekAIBack).
-  - ForceAIDrawFromFront active for the round when enabled.
-- Blueprint (planned): Paper_Dominance
-  - Timing: RoundStart
-  - Condition: PlayerHasMoreOfChoiceThanAI(choiceParam=Paper)
-  - Effect: ReplaceAIRandomCardsToChoice(choiceParam=Rock, intValue=2)
+D. Implemented Tags (Phase A and B)
+- Timing: RoundStart, TurnSettlement
+- Conditions: OutcomeIs, PlayerChoiceIs, PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn, PlayerHasMoreOfChoiceThanAI, TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RerollUsedEquals
+- Effects: AddScoreDelta, FinalScoreMultiplier, ForceAIDrawFromFront, ShowInfo, ReplaceAIRandomCardsToChoice, RevealNextAICard
+- GameContext: playerChoice, outcome, baseScore, currentTotal, scoreDelta, turnIndex, turnsPlanned, isLastTurn, playerHistory, outcomeHistory, rerollsUsed
 
-M. Development Summary / Changelog
-- Implemented tag-based Joker system (JokerData + JokerTag + JokerEnums + GameContext). Legacy IJoker/enum removed.
-- JokerManager refactored into a tag interpreter and effect executor. Added ExecuteTurnSettlementEffects and RoundStart handling.
-- Additive scoring pipeline wired in GameManager using GameContext (baseScore -> scoreDelta accumulation).
-- Round-scoped AI draw policy via ForceAIDrawFromFront at RoundStart.
-- DEBUGHUD refactored to asset-based toggles; UI fields renamed to CurrentText/PipelineText.
-- Added unified logging utility (RPSLog) and integrated logs for round/turn/joker events.
-- Added validation warnings for malformed/None tag parameters.
-- Added round history/meta to GameContext and new conditions/effect:
-  - Conditions: PlayedAtLeastCount, ConsecutiveDrawWithChoiceIs, IsLastTurn
-  - Effect: FinalScoreMultiplier (applies immediately)
-- Archetype flags added to JokerData for spawn/design classification: Anchor, Payoff, Catalyst, Utility, Risk.
-- New RoundStart hand-comparison condition and AI hand mutation effect:
-  - Condition: PlayerHasMoreOfChoiceThanAI
-  - Effect: ReplaceAIRandomCardsToChoice
+E. Implemented Jokers (assets)
+- Phase A: Scissors_Collector, Blade_of_Vengeance, Glass_Scissors, Sturdy_Barricade, Landslide, Force_Of_Nature, Devils_Contract, Paper_Dominance.
+- Phase B: Geological_Survey, Twin_Blades, Final_Royalty (TurnIndex 4 or 5), Iron_Heart (+30).
 
-N. Open Items / Planned Work
-- Author sample JokerData assets in Unity (All_In_Rock, The_Contrarian, Scout, Paper_Dominance).
-- QA checklist run (manual) per section J.
-- Spawn system (planned):
-  - JokerSpawnWeights (ScriptableObject): per-archetype weights (Anchor/Payoff/Catalyst/Utility/Risk), optional per-joker overrides.
-  - JokerSpawnManager (runtime): API GetRandomJoker(pool, weights[, mask, seed]); archetype mask filtering + weighted random.
-- Future tags: turn-index based conditions/effects, additional info/flow modifiers as needed.
+F. Behavior Notes from QA
+- Force_Of_Nature: multiplier applies on the turn when the condition is met (delta recalculated against current total).
+- Paper_Dominance: converts exactly 2 AI cards chosen from Paper or Scissors to Rock; re-applies on Reroll.
+- Geological_Survey: Loss with Rock reveals next AI front card; message appended under ResultText for that turn.
+- Final_Royalty: valid on turn 4 or 5 (two TurnIndexIs tags) and requires Win with Paper.
+- Iron_Heart: +30 on last turn if no reroll used.
+
+G. Next Steps (not yet implemented)
+- RoundPrepare and TurnStart timings; AddCardsToPlayerHand, AddCardsToAIHand, ModifyTurnsToPlayDelta; PlayerHasAtLeastCountInHand.
+- RoundEnd timing and FinalTotalMultiplier; flag IgnoreBossPenalty.
+
+H. Authoring Guidance
+- Multiple specific turns: add multiple TurnIndexIs tags (runtime OR).
+- Reveal info: use RevealNextAICard; UI appends message under the result line via ShowInfo queue.
+- AI hand mutation to Rock: use ReplaceAIRandomCardsToChoice with choiceParam Rock; engine limits candidates to Paper or Scissors.
+- Per-turn multipliers: use FinalScoreMultiplier.
+
+I. Changelog (engine deltas during Phase B)
+- Added enums and interpreter cases: TurnIndexIs, ConsecutiveOutcomeWithChoiceIs, RerollUsedEquals, RevealNextAICard.
+- GameContext: added rerollsUsed.
+- JokerManager: OR semantics for multiple TurnIndexIs; settlement multipliers apply to total; Paper_Dominance filtered mutation.
+- GameManager: ShowInfo queues and appends; GetPlayerRerollsUsed; ReplaceAIPaperOrScissorsToRock helper.
+
+J. Test Checklist (Phase B)
+- RevealNextAICard appends to ResultText as well as console.
+- FinalScoreMultiplier applies once to turn-end total for the triggering turn.
+- TurnIndexIs OR semantics verified with Final_Royalty (turn 4 or 5).
+
+K. Notes
+- Keep text files ASCII only to avoid save issues.
+- Use RPSLog for round/turn/joker events and future extensions.

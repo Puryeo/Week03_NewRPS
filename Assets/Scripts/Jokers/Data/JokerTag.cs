@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Jokers
@@ -28,5 +29,9 @@ namespace Jokers
         // true일 때, 해당 효과는 지정된 값(Outcome/Choice)에 일치하는 경우에만 적용된다.
         public bool filterByOutcome;        // 효과 적용을 특정 결과에 한정
         public bool filterByChoice;         // 효과 적용을 특정 선택(가위바위보)에 한정
+
+        // Phase B: optional flags for new conditions
+        public bool useBetweenRange; // TurnIndexIs: use intValue as exact when false; when true use intValue (min) and stringValue as max (parse)
+        public string extra;         // For future extensibility
     }
 }

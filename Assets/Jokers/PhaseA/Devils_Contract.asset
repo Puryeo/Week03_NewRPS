@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f86557d0063a95409e1a3b5e4036868, type: 3}
+  m_Name: Devils_Contract
+  m_EditorClassIdentifier: 
+  jokerName: Devils_Contract
+  description: Win with Paper +20; Loss with Paper -30.
+  archetypes: 4
+  tags:
+  - category: 0
+    timingType: 2
+    conditionType: 0
+    effectType: 0
+    outcomeParam: 0
+    choiceParam: 0
+    intValue: 0
+    stringValue: 
+    filterByOutcome: 0
+    filterByChoice: 0
+  - category: 2
+    timingType: 0
+    conditionType: 0
+    effectType: 1
+    outcomeParam: 0
+    choiceParam: 1
+    intValue: 20
+    stringValue: 
+    filterByOutcome: 1
+    filterByChoice: 1
+  - category: 2
+    timingType: 0
+    conditionType: 0
+    effectType: 1
+    outcomeParam: 2
+    choiceParam: 1
+    intValue: -30
+    stringValue: 
+    filterByOutcome: 1
+    filterByChoice: 1

@@ -24,5 +24,8 @@ namespace Jokers
         // Round history (including this turn when context is built)
         public List<Choice> playerHistory = new List<Choice>();
         public List<Outcome> outcomeHistory = new List<Outcome>();
+
+        // Phase B additions
+        public int rerollsUsed;   // expose rerolls for conditions
     }
 }
