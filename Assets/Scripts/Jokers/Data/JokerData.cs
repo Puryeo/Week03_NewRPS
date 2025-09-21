@@ -22,5 +22,9 @@ namespace Jokers
 
         [Header("태그 목록")]
         public List<JokerTag> tags = new List<JokerTag>();
+
+        [Header("Visuals")]
+        [Tooltip("Offer/Gameplay HUD에서 사용할 썸네일 이미지")]
+        public Sprite thumbnail;
     }
 }

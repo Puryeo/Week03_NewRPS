@@ -14,6 +14,23 @@ namespace Jokers
         private bool _allowRoundStartHandMutationReapplyOnce = false; // RoundStart 손패 변형을 토글 시 1회만 재적용 허용(리롤용)
         public bool AIDrawFromFront => _drawFromFrontThisRound; // 기존 공개 프로퍼티(라운드 정책)
 
+        // HUD/외부 동기화를 위한 이벤트와 읽기 전용 파이프라인 노출
+        public event System.Action PipelineChanged; // 파이프라인(활성 조커/순서) 변경 시 알림
+        public event System.Action<JokerData> OnJokerTriggered; // 어떤 타이밍에서든 조건을 만족해 발동되었을 때 알림
+        public System.Collections.Generic.IReadOnlyList<JokerData> GetPipelineOrdered()
+        {
+            return _order.AsReadOnly();
+        }
+
+        private void RaisePipelineChanged()
+        {
+            try { PipelineChanged?.Invoke(); } catch { }
+        }
+        private void RaiseJokerTriggered(JokerData data)
+        {
+            try { if (data != null) OnJokerTriggered?.Invoke(data); } catch { }
+        }
+
         // 다음 AI 드로우가 앞에서부터 진행되어야 하는지 판단하고, 일회성 플래그는 소비하며 해제한다.
         public bool ShouldDrawAIFromFront()
         {
@@ -71,6 +88,7 @@ namespace Jokers
             var name = data != null ? (string.IsNullOrEmpty(data.jokerName) ? data.name : data.jokerName) : "None";
             RPS.RPSLog.Event("Joker", "Set", $"name={name}");
             Debug.Log($"[JokerManager] SetJoker: {(data != null ? data.jokerName : "None")} ");
+            RaisePipelineChanged();
         }
 
         public void ToggleJoker(JokerData data)
@@ -81,6 +99,7 @@ namespace Jokers
                 _order.Clear();
                 RPS.RPSLog.Event("Joker", "Clear", "");
                 Debug.Log("[JokerManager] Cleared all jokers");
+                RaisePipelineChanged();
                 return;
             }
 
@@ -91,6 +110,7 @@ namespace Jokers
                 _order.Remove(data);
                 RPS.RPSLog.Event("Joker", "Disabled", $"name={label}");
                 Debug.Log($"[JokerManager] Disabled: {data.jokerName}");
+                RaisePipelineChanged();
             }
             else
             {
@@ -99,6 +119,7 @@ namespace Jokers
                 RPS.RPSLog.Event("Joker", "Enabled", $"name={label}");
                 Debug.Log($"[JokerManager] Enabled: {data.jokerName}");
                 ValidateAndWarn(data);
+                RaisePipelineChanged();
             }
         }
 
@@ -120,6 +141,7 @@ namespace Jokers
         public void OnJokerToggled(GameManager gm)
         {
             EvaluateRoundStartTags(gm, applyDrawPolicy: false);
+            RaisePipelineChanged(); // HUD 갱신 용도(순서/활성 변경 반영)
         }
 
         // Phase C: RoundPrepare hook - called after hand generation and before OnRoundStart
@@ -168,6 +190,9 @@ namespace Jokers
                     if (!condOk) break;
                 }
                 if (!condOk) continue;
+
+                // 조건을 만족했으므로 발동 알림(Prepare 타이밍)
+                RaiseJokerTriggered(data);
 
                 foreach (var eff in data.tags)
                 {
@@ -266,6 +291,9 @@ namespace Jokers
                 }
                 if (!condOk) continue;
 
+                // 조건 만족 알림(재평가에서도 한 번 표시 - HUD 시각효과 목적)
+                RaiseJokerTriggered(data);
+
                 foreach (var eff in data.tags)
                 {
                     if (eff == null || eff.category != JokerTagCategory.Effect) continue;
@@ -339,6 +367,9 @@ namespace Jokers
                     if (!conditionsOk) break;
                 }
                 if (!conditionsOk) continue;
+
+                // 조건 만족: 발동 알림
+                RaiseJokerTriggered(data);
 
                 foreach (var eff in data.tags)
                 {
@@ -496,6 +527,9 @@ namespace Jokers
                 }
                 if (!conditionsOk) continue;
 
+                // 조건 만족: 발동 알림
+                RaiseJokerTriggered(data);
+
                 foreach (var eff in data.tags)
                 {
                     if (eff == null || eff.category != JokerTagCategory.Effect) continue;
@@ -627,6 +661,9 @@ namespace Jokers
                 }
                 if (!conditionsOk) continue;
 
+                // 조건 만족: 발동 알림(RoundEnd)
+                RaiseJokerTriggered(data);
+
                 foreach (var eff in data.tags)
                 {
                     if (eff == null || eff.category != JokerTagCategory.Effect) continue;
@@ -718,6 +755,9 @@ namespace Jokers
                     if (!condOk) break;
                 }
                 if (!condOk) continue;
+
+                // 조건 만족: 발동 알림(RoundStart)
+                RaiseJokerTriggered(data);
 
                 foreach (var eff in data.tags)
                 {
